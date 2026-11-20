@@ -21,7 +21,7 @@ The actual device has not been contacted from this sandbox. Therefore the initia
 
 ## Next evidence gate
 
-Run `scripts/diagnose-local.sh` in a normal Mac Terminal with the phone connected and Camera open during the 20-second log window. The output stays under the parent project's ignored, private `data/` directory. Compare the installed binary and filter with this branch. If a diagnostic build is installed, read the menu's `Stages` line to distinguish injection, hook, frame, and render failures before changing the capture backend.
+Run `bash scripts/diagnose-local.sh` from this fork's directory inside `/Users/aleksandr/Projects/iPhone11JB` in a normal Mac Terminal with the phone connected and Camera open during the 20-second log window. The output stays under the parent project's ignored, private `data/` directory. Compare the installed binary and filter with this branch. If a diagnostic build is installed, read the menu's `Stages` line to distinguish injection, hook, frame, and render failures before changing the capture backend.
 
 ## Related upstream reports
 
