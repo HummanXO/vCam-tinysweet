@@ -81,6 +81,7 @@ Only one replacement item is selected at a time. Selecting new media replaces th
 
 ## Important notes and limitations
 
+- On the tested iPhone 11 with iOS 18.3.2, photo replacement reaches the camera render path. Video replacement is currently unavailable because `AVPlayerItemVideoOutput` does not initialize inside `cameracaptured`; the tweak handles that failure without crashing the daemon.
 - Video playback is muted. VCam does not transmit the video's audio; provide audio separately through your streaming or recording setup.
 - Automatic looping repeats the selected clip while the camera playback path is active. It does not keep a livestream online by itself.
 - iOS, SpringBoard, mediaserverd, the camera app, network conditions, battery state, heat, or memory pressure can interrupt a long-running session. Do not treat VCam as a guarantee of unattended 24/7 operation.

@@ -1,48 +1,26 @@
-# VCam iOS 18.3.2 diagnostic handoff
+# VCam on iPhone 11, iOS 18.3.2 — device findings
 
-## Verified on the iPhone (2026-11-21)
+## Current state (2026-11-21)
 
-- USB-forwarded SSH now works. The installed package was 0.1.34 during the first probe and 0.1.35-diag1 during the second; the latter's installed dylibs match the CI rootless package by SHA-256.
-- `cameracaptured` loads `vcam.dylib`: the 20-second syslog windows each contained about 3900 messages from it. Every message was a permission denial while creating `/tmp/VCamStatus`. Injection is proven; hook, media loading, and rendering still need stage evidence.
-- The selected image setting is enabled and points to `/tmp/VCamMedia/media-*.jpeg`, but `/tmp/VCamMedia` is absent from the mobile SSH filesystem view. This is a likely stale selection, though the camera daemon's filesystem view has not been proven identical.
-- The diagnostic capture is under the parent project's private `data/vcam-diagnostic-20261121-013709/` directory. No private media bytes were uploaded.
+- `0.1.35-diag7` rootless is installed on the iPhone. Its CI build passed; the package was checked by SHA-256 before installation.
+- With a photo selected, `cameracaptured` reports all stages: constructor, CMCapture, class, selector, hook, camera frames, media loaded, and replacement rendered. The camera daemon remained at the same PID for at least 12 seconds after the final test.
+- The current selected photo is in `/var/jb/var/mobile/VCam/Media`, the persistent jailbreak path used for new imports. The earlier selection under `/var/jb/tmp/VCamMedia` was copied there without exposing its contents.
+- A screen capture could not be obtained because iOS rejected the `screenshotr` service without a mounted Developer disk image. The image change has been verified at the internal render stage, not by inspecting the visible Camera preview.
 
-## 0.1.35-diag2 candidate
+## Root cause of the photo failure
 
-- Keep in-memory status values in the camera daemon and retry a denied `/tmp/VCamStatus` directory only every 30 seconds. This prevents the per-frame log flood and repeated filesystem work.
-- Import selected media into `/var/mobile/Media/VCam/Media` instead of `/tmp/VCamMedia`, alongside the persistent settings. A selection made before this change must be imported again through the menu.
-- The persistent path is a hypothesis for media readability by `cameracaptured`; it still requires a device test. Keep the 0.1.34 rollback package available.
+- The original menu checked only `mediaserverd`, while iOS 18 uses `cameracaptured` for this camera path.
+- The tweak was injected and hooked `BWNodeOutput emitSampleBuffer:`. Live logs showed 2304x1728 buffers reaching the hook.
+- `cameracaptured` denied file access under `/tmp` and `/var/mobile/Media/VCam/Media` with `EPERM`. The same synthetic PNG loaded and rendered from `/var/jb/tmp`, then from persistent `/var/jb/var/mobile/VCam/Media`.
+- `/tmp/VCamStatus` also returned `EPERM`; the old code logged about 3900 errors in 20 seconds. The current code keeps status in memory, uses Darwin notifications for cross-process stages, and retries the denied directory only every 30 seconds.
 
-## Device result through 0.1.35-diag5
+## Video limitation
 
-- The 0.1.35-diag3 live log proved `cameracaptured` installed the `BWNodeOutput` hook and received 2304x1728 video buffers. Its `open()` of media under `/var/mobile/Media/VCam/Media` failed with `EPERM`.
-- Moving the synthetic PNG under `/var/jb/tmp` made the `media` and `render` stages appear. This isolated the failure to the media path rather than injection, frame delivery, or ImageIO.
-- The persistent `/var/jb/var/mobile/VCam/Media` directory is writable by `mobile`. After selecting the same synthetic PNG there and restarting `cameracaptured`, all eight stages appeared again, including `media` and `render`.
-- 0.1.35-diag5 uses that persistent path for future imports. A fresh import through the SpringBoard picker and a visual camera check remain to be tested. The current selection is the synthetic checkerboard image.
-- A synthetic H.264 MP4 was readable but repeatedly crashed `cameracaptured`. A redacted crash report shows an uncaught Objective-C exception at `-[AVPlayerItem(AVPlayerItemOutputs) addOutput:]`. Returning to the test PNG stopped the crash loop. 0.1.35-diag6 catches this exception so the camera service remains alive, but video replacement needs a different decode path.
+- A readable synthetic H.264 MP4 caused an uncaught exception at `-[AVPlayerItem addOutput:]` in the older build. The 0.1.35-diag7 guard prevents the camera daemon from crashing.
+- Both the original and basic BGRA initialization of `AVPlayerItemVideoOutput` return `nil` inside `cameracaptured` on this device. The video file is readable, but no video frame is loaded or rendered. Video replacement requires another decode path; the test restored the selected photo afterward.
 
-## Changes in 0.1.35-diag1
+## Evidence and rollback
 
-- Added a Darwin notification stage bitmap for constructor, CMCapture load, class, selector, hook, first frame, media load, and first render. This survives failure to write the supplementary plist.
-- The menu now selects an alive `cameracaptured` status first, then an alive `mediaserverd` status. It displays each stage independently.
-- Removed the `0777` runtime status directory mode. File writes remain best effort; stage bitmap and heartbeat carry the cross-sandbox minimum.
-- Added `scripts/diagnose-local.sh`, a read-only Mac Terminal probe that verifies the remote iOS shell, saves the installed tweak files, checks plist and Mach-O metadata, and collects a short filtered syslog sample.
-
-## What remains unproven
-
-Injection into `cameracaptured` is established. `BWNodeOutput` hook installation, camera frames reaching it, media access, and image or video replacement have **not** been established. A successful CI build proves compilation and packaging only.
-
-## Next evidence gate
-
-Read the installed diagnostic menu's `Stages` line while Camera is open. On 0.1.35-diag2, import a fresh image through the menu, then inspect stages for hook, frames, media, and render. The private capture remains under the parent project's `data/` directory.
-
-## Related upstream reports
-
-- Dopamine issue [#948](https://github.com/opa334/Dopamine/issues/948) reports absent tweak injection on an iPhone 11 with iOS 18.5, but has no confirmed fix in its comments.
-- Dopamine issue [#974](https://github.com/opa334/Dopamine/issues/974) reports a similar symptom on iPhone 11 with iOS 18.3.2; it has no resolution as of this review.
-
-These reports are possible leads, not proof of the cause on this device.
-
-## Rollback for a later controlled install
-
-The `0.1.34` rootless and roothide packages have been saved in the parent project's private `data/vcam-packages/rollback/` directory. If the camera daemon crashes after a later install, disable Tweak Injection through Dopamine, remove the new package through Sileo/Zebra, then reinstall `0.1.34` and re-enable injection. Do not repeatedly restart a crashing camera service to collect more data.
+- Redacted device logs and package files remain under the parent project's private `data/` directory; no private media bytes were uploaded.
+- The `0.1.34` rootless package is saved at `data/vcam-packages/rollback/vcam-rootless.deb`. The tested 0.1.35-diag7 package is at `data/vcam-packages/diag7/vcam-rootless.deb`.
+- The pull request remains a draft while video replacement and visible preview verification are outstanding.
