@@ -13,7 +13,7 @@ NSString * const VCamOffsetYKey = @"OffsetY";
 NSString * const VCamRotationKey = @"Rotation";
 NSString * const VCamZoomKey = @"Zoom";
 NSString * const VCamVideoPausedKey = @"VideoPaused";
-NSString * const VCamRuntimeVersion = @"0.1.35-diag3";
+NSString * const VCamRuntimeVersion = @"0.1.35-diag4";
 
 static NSString *VCamCurrentDaemonName(void);
 static int VCamNotifyTokenForName(NSString *name);
@@ -433,8 +433,7 @@ void VCamResetRuntimeStatus(void) {
 }
 
 NSString *VCamMediaDirectory(void) {
-    // /tmp is cleared independently of the selected media setting and may be
-    // inaccessible to the camera service on iOS 18. Keep both under VCam's
-    // persistent, mobile-owned media directory.
-    return [VCamPreferencesDirectory() stringByAppendingPathComponent:@"Media"];
+    // The iOS 18 cameracaptured sandbox denies /tmp and /var/mobile/Media,
+    // but the rootless jailbreak prefix is readable by the camera daemon.
+    return @"/var/jb/tmp/VCamMedia";
 }
