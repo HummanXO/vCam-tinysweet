@@ -197,6 +197,7 @@ static BOOL VCamDecodeImage(NSString *path, UIImage **imageOut) {
     NSURL *url = [NSURL fileURLWithPath:path];
     CGImageSourceRef imageSource = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
     if (!imageSource) {
+        NSLog(@"[VCam] image decode source could not open: %@", path.lastPathComponent);
         VCamSetRuntimeStatus(@"mediaState", @"image-open-failed");
         VCamSetRuntimeStatus(@"mediaDetail", @"ImageIO could not open the selected photo from the shared media folder");
         return NO;
@@ -218,6 +219,7 @@ static BOOL VCamDecodeImage(NSString *path, UIImage **imageOut) {
     CGImageRef imageRef = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, (__bridge CFDictionaryRef)options);
     CFRelease(imageSource);
     if (!imageRef) {
+        NSLog(@"[VCam] image thumbnail decode failed: %@", path.lastPathComponent);
         VCamSetRuntimeStatus(@"mediaState", @"image-decode-failed");
         VCamSetRuntimeStatus(@"mediaDetail", @"ImageIO could not decode the selected photo at its original pixel dimensions");
         return NO;
@@ -309,13 +311,13 @@ static BOOL VCamOpenSelectedMediaForRead(NSString *path) {
         return NO;
     }
 
-    // The selected media is copied by SpringBoard into /tmp/VCamMedia.
-    // This intentionally uses the same direct filesystem access pattern as
-    // the original working /tmp/test.png implementation, without sandbox tokens.
+    // Probe the selected file directly so a sandbox or path failure is distinct
+    // from an ImageIO or AVFoundation decode failure.
     errno = 0;
     int descriptor = open(path.fileSystemRepresentation, O_RDONLY | O_CLOEXEC);
     if (descriptor < 0) {
         int savedErrno = errno;
+        NSLog(@"[VCam] selected media open failed: errno=%d file=%@", savedErrno, path.lastPathComponent);
         VCamSetRuntimeStatus(@"mediaFileAccess", @"failed");
         VCamSetRuntimeStatus(@"mediaFileOpenErrno", @(savedErrno));
         VCamSetRuntimeStatus(@"mediaState", @"file-not-readable");
@@ -335,6 +337,7 @@ static BOOL VCamOpenSelectedMediaForRead(NSString *path) {
     }
 
     VCamSetRuntimeStatus(@"mediaFileAccess", @"readable");
+    NSLog(@"[VCam] selected media readable: %@", path.lastPathComponent);
     VCamSetRuntimeStatus(@"mediaFileOpenErrno", @0);
     VCamSetRuntimeStatus(@"mediaFileSize", @((unsigned long long)fileInfo.st_size));
     VCamSetRuntimeStatus(@"mediaDetail", [NSString stringWithFormat:@"File readable by mediaserverd (%llu bytes)", (unsigned long long)fileInfo.st_size]);
@@ -420,6 +423,9 @@ void loadReplacementMedia(void) {
             return;
         }
         newPath = observedPath;
+        if (![newPath isEqualToString:sRequestedPath] && ![newPath isEqualToString:sLoadedPath]) {
+            NSLog(@"[VCam] selected media observed: %@", newPath.lastPathComponent);
+        }
         if ([newPath isEqualToString:sLoadedPath]) {
             if (sCurrentMode == VCamModeVideo && sVideoPlayer) {
                 if (videoPaused) {
