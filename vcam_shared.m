@@ -28,7 +28,7 @@ static NSString *VCamPreferencesFilePath(void) {
 // Do not report cameracaptured as a required daemon on OS versions where it
 // is not part of the camera delivery path.
 static NSArray<NSString *> *VCamCameraDaemonNames(void) {
-    return @[@"mediaserverd"];
+    return @[@"mediaserverd", @"cameracaptured"];
 }
 
 static NSString *VCamCurrentDaemonName(void) {
