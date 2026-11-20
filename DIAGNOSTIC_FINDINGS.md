@@ -1,12 +1,17 @@
 # VCam iOS 18.3.2 diagnostic handoff
 
-## Verified in this workspace (2026-11-21)
+## Verified on the iPhone (2026-11-21)
 
-- The current fork source still hooks `BWNodeOutput emitSampleBuffer:` in `Tweak.x` and filters both `mediaserverd` and `cameracaptured` in `vcam.plist`.
-- The menu's diagnostic view read only the `mediaserverd` status. It could show `NO HEARTBEAT from mediaserverd` even if `cameracaptured` was alive and publishing a heartbeat.
-- Runtime status depended on a plist under `/tmp/VCamStatus`. A sandbox denial could hide successful constructor, hook, or frame progress from the menu. The original code also tried to set the directory mode to `0777`.
-- The existing `iproxy` listener and pinned SSH key are present on the Mac, but this agent's terminal sandbox rejects connections to `127.0.0.1:2222` with `Operation not permitted`. This is an environment restriction, not a measured iPhone SSH failure.
-- Theos is absent locally, and the same sandbox cannot resolve `github.com` for `git clone`. The connected GitHub API was used to read the fork source.
+- USB-forwarded SSH now works. The installed package was 0.1.34 during the first probe and 0.1.35-diag1 during the second; the latter's installed dylibs match the CI rootless package by SHA-256.
+- `cameracaptured` loads `vcam.dylib`: the 20-second syslog windows each contained about 3900 messages from it. Every message was a permission denial while creating `/tmp/VCamStatus`. Injection is proven; hook, media loading, and rendering still need stage evidence.
+- The selected image setting is enabled and points to `/tmp/VCamMedia/media-*.jpeg`, but `/tmp/VCamMedia` is absent from the mobile SSH filesystem view. This is a likely stale selection, though the camera daemon's filesystem view has not been proven identical.
+- The diagnostic capture is under the parent project's private `data/vcam-diagnostic-20261121-013709/` directory. No private media bytes were uploaded.
+
+## 0.1.35-diag2 candidate
+
+- Keep in-memory status values in the camera daemon and retry a denied `/tmp/VCamStatus` directory only every 30 seconds. This prevents the per-frame log flood and repeated filesystem work.
+- Import selected media into `/var/mobile/Media/VCam/Media` instead of `/tmp/VCamMedia`, alongside the persistent settings. A selection made before this change must be imported again through the menu.
+- The persistent path is a hypothesis for media readability by `cameracaptured`; it still requires a device test. Keep the 0.1.34 rollback package available.
 
 ## Changes in 0.1.35-diag1
 
@@ -17,11 +22,11 @@
 
 ## What remains unproven
 
-The actual device has not been contacted from this sandbox. Therefore the initial injection failure, `BWNodeOutput` availability, frame path, media access, and image or video replacement have **not** been established. A successful CI build would prove only compilation and packaging. Do not install this diagnostic revision as a camera fix without a rollback copy of the installed package and a controlled test.
+Injection into `cameracaptured` is established. `BWNodeOutput` hook installation, camera frames reaching it, media access, and image or video replacement have **not** been established. A successful CI build proves compilation and packaging only.
 
 ## Next evidence gate
 
-Run `bash scripts/diagnose-local.sh` from this fork's directory inside `/Users/aleksandr/Projects/iPhone11JB` in a normal Mac Terminal with the phone connected and Camera open during the 20-second log window. The output stays under the parent project's ignored, private `data/` directory. Compare the installed binary and filter with this branch. If a diagnostic build is installed, read the menu's `Stages` line to distinguish injection, hook, frame, and render failures before changing the capture backend.
+Read the installed diagnostic menu's `Stages` line while Camera is open. On 0.1.35-diag2, import a fresh image through the menu, then inspect stages for hook, frames, media, and render. The private capture remains under the parent project's `data/` directory.
 
 ## Related upstream reports
 
@@ -32,4 +37,4 @@ These reports are possible leads, not proof of the cause on this device.
 
 ## Rollback for a later controlled install
 
-Before installing a diagnostic build, retain the known-working `0.1.34` package or a package-manager download. If the camera daemon crashes after installation, disable Tweak Injection through Dopamine, remove `0.1.35-diag1` through Sileo/Zebra, then reinstall `0.1.34` and re-enable injection. Do not repeatedly restart a crashing camera service to collect more data.
+The `0.1.34` rootless and roothide packages have been saved in the parent project's private `data/vcam-packages/rollback/` directory. If the camera daemon crashes after a later install, disable Tweak Injection through Dopamine, remove the new package through Sileo/Zebra, then reinstall `0.1.34` and re-enable injection. Do not repeatedly restart a crashing camera service to collect more data.

@@ -13,10 +13,11 @@ NSString * const VCamOffsetYKey = @"OffsetY";
 NSString * const VCamRotationKey = @"Rotation";
 NSString * const VCamZoomKey = @"Zoom";
 NSString * const VCamVideoPausedKey = @"VideoPaused";
-NSString * const VCamRuntimeVersion = @"0.1.35-diag1";
+NSString * const VCamRuntimeVersion = @"0.1.35-diag2";
 
 static NSString *VCamCurrentDaemonName(void);
 static int VCamNotifyTokenForName(NSString *name);
+static NSMutableDictionary *sWritableRuntimeStatus;
 
 // Compact cross-sandbox state. The plist below is only supplemental: a camera
 // daemon may be unable to create or write /tmp/VCamStatus.
@@ -80,13 +81,23 @@ static NSString *VCamRuntimeStatusFilePathForProcess(NSString *processName) {
 }
 
 static BOOL VCamEnsureRuntimeStatusDirectory(void) {
+    // cameracaptured can be denied access to /tmp. Avoid retrying and logging
+    // on every camera frame while keeping the Darwin notify stages available.
+    static time_t nextRetry = 0;
+    time_t now = time(NULL);
+    if (now < nextRetry) return NO;
     NSString *directory = VCamRuntimeStatusDirectory();
     NSError *error = nil;
     BOOL ok = [[NSFileManager defaultManager] createDirectoryAtPath:directory
                                          withIntermediateDirectories:YES
                                          attributes:@{ NSFilePosixPermissions: @0755 }
                                                                error:&error];
-    if (!ok) NSLog(@"[VCam] cannot create runtime status directory %@: %@", directory, error);
+    if (!ok) {
+        nextRetry = now + 30;
+        NSLog(@"[VCam] cannot create runtime status directory %@: %@", directory, error);
+    } else {
+        nextRetry = 0;
+    }
     return ok;
 }
 
@@ -360,8 +371,11 @@ void VCamSetRuntimeStatus(NSString *key, id value) {
     NSString *processName = VCamCurrentDaemonName();
     NSString *path = VCamRuntimeStatusFilePathForProcess(processName);
     @synchronized (processName) {
-        NSMutableDictionary *status = [VCamReadRuntimeStatusForProcess(processName) mutableCopy];
-        if (!status) status = [NSMutableDictionary dictionary];
+        if (!sWritableRuntimeStatus) {
+            sWritableRuntimeStatus = [VCamReadRuntimeStatusForProcess(processName) mutableCopy];
+        }
+        if (!sWritableRuntimeStatus) sWritableRuntimeStatus = [NSMutableDictionary dictionary];
+        NSMutableDictionary *status = sWritableRuntimeStatus;
         status[@"daemonProcess"] = processName;
         id oldValue = status[key];
         if (value && [oldValue isEqual:value]) return;
@@ -391,6 +405,7 @@ void VCamResetRuntimeStatus(void) {
     };
     NSString *path = VCamRuntimeStatusFilePathForProcess(processName);
     @synchronized (processName) {
+        sWritableRuntimeStatus = [initial mutableCopy];
         if (VCamEnsureRuntimeStatusDirectory()) {
             BOOL didWrite = [initial writeToFile:path atomically:YES];
             if (didWrite) chmod(path.fileSystemRepresentation, 0644);
@@ -418,7 +433,8 @@ void VCamResetRuntimeStatus(void) {
 }
 
 NSString *VCamMediaDirectory(void) {
-    // Keep replacement files in the same shared temporary area that worked
-    // with the original mediaserverd implementation (/tmp/test.png).
-    return @"/tmp/VCamMedia";
+    // /tmp is cleared independently of the selected media setting and may be
+    // inaccessible to the camera service on iOS 18. Keep both under VCam's
+    // persistent, mobile-owned media directory.
+    return [VCamPreferencesDirectory() stringByAppendingPathComponent:@"Media"];
 }
