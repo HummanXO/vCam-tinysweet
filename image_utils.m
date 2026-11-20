@@ -263,6 +263,18 @@ static BOOL VCamPrepareVideo(NSString *path,
         (NSString *)kCVPixelBufferMetalCompatibilityKey: @YES
     };
     AVPlayerItemVideoOutput *videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixelAttributes];
+    if (!videoOutput) {
+        // Some camera services reject IOSurface/Metal output requirements.
+        NSDictionary *basicAttributes = @{ (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA) };
+        videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:basicAttributes];
+        if (videoOutput) NSLog(@"[VCam] video output initialized with basic BGRA attributes");
+    }
+    if (!videoOutput) {
+        NSLog(@"[VCam] AVPlayerItemVideoOutput initialization returned nil");
+        VCamSetRuntimeStatus(@"mediaState", @"video-output-unavailable");
+        VCamSetRuntimeStatus(@"mediaDetail", @"AVPlayerItemVideoOutput could not initialize in camera service");
+        return NO;
+    }
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
     @try {
         [item addOutput:videoOutput];
