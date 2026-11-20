@@ -656,10 +656,12 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     NSDictionary *combined = VCamCopyRuntimeStatus();
     NSDictionary *daemonStatuses = [combined[@"daemonStatuses"] isKindOfClass:[NSDictionary class]] ? combined[@"daemonStatuses"] : @{};
     NSDictionary *mediaDaemon = [daemonStatuses[@"mediaserverd"] isKindOfClass:[NSDictionary class]] ? daemonStatuses[@"mediaserverd"] : @{};
-    BOOL mediaLoaded = [mediaDaemon[@"runtimeVersion"] isEqualToString:VCamRuntimeVersion] && [mediaDaemon[@"daemonLoaded"] boolValue];
-    NSDictionary *runtime = mediaDaemon.count ? mediaDaemon : combined;
+    NSDictionary *cameraDaemon = [daemonStatuses[@"cameracaptured"] isKindOfClass:[NSDictionary class]] ? daemonStatuses[@"cameracaptured"] : @{};
+    NSDictionary *runtime = [cameraDaemon[@"daemonLoaded"] boolValue] ? cameraDaemon :
+                            ([mediaDaemon[@"daemonLoaded"] boolValue] ? mediaDaemon : combined);
+    BOOL mediaLoaded = [runtime[@"runtimeVersion"] isEqualToString:VCamRuntimeVersion] && [runtime[@"daemonLoaded"] boolValue];
 
-    NSString *processName = [runtime[@"daemonProcess"] isKindOfClass:[NSString class]] ? runtime[@"daemonProcess"] : @"mediaserverd";
+    NSString *processName = [runtime[@"daemonProcess"] isKindOfClass:[NSString class]] ? runtime[@"daemonProcess"] : @"unknown";
     NSString *hookState = [runtime[@"hookState"] isKindOfClass:[NSString class]] ? runtime[@"hookState"] : @"unknown";
     BOOL framesSeen = [runtime[@"cameraFramesSeen"] boolValue];
     BOOL rendered = [runtime[@"replacementRendered"] boolValue];
@@ -669,13 +671,13 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     NSString *renderError = [runtime[@"renderError"] isKindOfClass:[NSString class]] ? runtime[@"renderError"] : @"";
     NSInteger heartbeatAge = [runtime[@"heartbeatAgeSeconds"] respondsToSelector:@selector(integerValue)] ? [runtime[@"heartbeatAgeSeconds"] integerValue] : -1;
 
-    NSString *daemonLine = mediaLoaded ? [NSString stringWithFormat:@"Camera daemon injection: YES (%@)", processName] : @"Camera daemon injection: NO HEARTBEAT from mediaserverd";
-    NSString *heartbeatLine = heartbeatAge >= 0 ? [NSString stringWithFormat:@"mediaserverd heartbeat: %@ (%lds ago)", mediaLoaded ? @"ALIVE" : @"STALE", (long)heartbeatAge] : @"mediaserverd heartbeat: NOT RECEIVED";
+    NSString *daemonLine = mediaLoaded ? [NSString stringWithFormat:@"Camera daemon injection: YES (%@)", processName] : @"Camera daemon injection: NO HEARTBEAT from camera daemons";
+    NSString *heartbeatLine = heartbeatAge >= 0 ? [NSString stringWithFormat:@"%@ heartbeat: %@ (%lds ago)", processName, mediaLoaded ? @"ALIVE" : @"STALE", (long)heartbeatAge] : @"Camera daemon heartbeat: NOT RECEIVED";
     NSString *frameLine = framesSeen ? [NSString stringWithFormat:@"Camera frames: RECEIVED (%@)", runtime[@"cameraFrameSize"] ?: @"size unknown"] : @"Camera frames: WAITING (open Camera and start preview)";
     NSString *mediaLine = [NSString stringWithFormat:@"Media: %@%@", mediaState.uppercaseString, mediaDetail.length ? [@" — " stringByAppendingString:mediaDetail] : @""];
     NSString *enabledLine = [runtime[@"replacementEnabled"] respondsToSelector:@selector(boolValue)]
-        ? [NSString stringWithFormat:@"Replacement state (mediaserverd): %@", [runtime[@"replacementEnabled"] boolValue] ? @"ON" : @"OFF"]
-        : @"Replacement state (mediaserverd): WAITING";
+        ? [NSString stringWithFormat:@"Replacement state (%@): %@", processName, [runtime[@"replacementEnabled"] boolValue] ? @"ON" : @"OFF"]
+        : [NSString stringWithFormat:@"Replacement state (%@): WAITING", processName];
     NSString *outputLine = rendered ? [NSString stringWithFormat:@"Buffer render call: SENT (%@)", runtime[@"renderedFrameSize"] ?: @"size unknown"] : @"Buffer render call: NOT SENT YET";
     BOOL selectionReceived = [runtime[@"mediaSelectionReceived"] boolValue];
     NSString *selectionName = [runtime[@"mediaSelectionFilename"] isKindOfClass:NSString.class] ? runtime[@"mediaSelectionFilename"] : @"";
@@ -688,10 +690,20 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     NSString *videoPump = [runtime[@"videoFramePump"] isKindOfClass:NSString.class] ? runtime[@"videoFramePump"] : @"not-active";
     NSString *videoFrameSize = [runtime[@"videoFrameSize"] isKindOfClass:NSString.class] ? runtime[@"videoFrameSize"] : @"waiting";
     NSString *videoPlayerError = [runtime[@"videoPlayerError"] isKindOfClass:NSString.class] ? runtime[@"videoPlayerError"] : @"";
+    NSString *stageLine = [NSString stringWithFormat:@"Stages: ctor %@ · framework %@ · class %@ · selector %@ · hook %@ · frames %@ · media %@ · render %@",
+        [runtime[@"constructorReached"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"frameworkLoaded"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"hookClassFound"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"hookSelectorFound"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"hookInstalled"] boolValue] ? @"YES" : @"NO",
+        framesSeen ? @"YES" : @"NO",
+        [runtime[@"replacementMediaLoaded"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"replacementFramesRendered"] boolValue] ? @"YES" : @"NO"];
     NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithArray:@[
         daemonLine,
         [NSString stringWithFormat:@"Camera daemon version: %@", daemonVersion],
         heartbeatLine,
+        stageLine,
         [NSString stringWithFormat:@"BWNodeOutput hook: %@", hookState.uppercaseString],
         frameLine,
         enabledLine,
