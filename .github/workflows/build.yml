@@ -100,7 +100,18 @@ jobs:
           test -f "$1"
           cp "$1" dist/vcam-roothide.deb
 
-      - name: Upload DEB artifacts
+      - name: Verify DEB artifacts
+        # Check both packages before publishing, and include per-DEB hashes.
+        # The artifact ZIP digest alone cannot verify an extracted package.
+        run: |
+          set -euo pipefail
+          for deb in dist/*.deb; do
+            dpkg-deb --field "$deb" Package Version Architecture
+            dpkg-deb --contents "$deb" | grep -q '/Library/MobileSubstrate/DynamicLibraries/vcam.dylib'
+          done
+          shasum -a 256 dist/*.deb > dist/SHA256SUMS
+
+      - name: Upload verified DEB artifacts
         uses: actions/upload-artifact@v4
         with:
           name: vcam-deb-packages
