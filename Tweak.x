@@ -72,10 +72,14 @@ static void VCamTryInstallCaptureHook(void) {
             sCMCaptureHandle = dlopen("/System/Library/PrivateFrameworks/CMCapture.framework", RTLD_NOW | RTLD_GLOBAL);
         }
     }
+    if (sCMCaptureHandle) VCamSetRuntimeStatus(@"frameworkLoaded", @YES);
+    else NSLog(@"[VCam] CMCapture dlopen failed: %s", dlerror() ?: "unknown");
 
     Class outputClass = objc_getClass("BWNodeOutput");
     SEL outputSelector = sel_registerName("emitSampleBuffer:");
     Method outputMethod = outputClass ? class_getInstanceMethod(outputClass, outputSelector) : NULL;
+    if (outputClass) VCamSetRuntimeStatus(@"hookClassFound", @YES);
+    if (outputMethod) VCamSetRuntimeStatus(@"hookSelectorFound", @YES);
 
     if (outputClass && outputMethod) {
         %init(VCamCaptureHooks);
