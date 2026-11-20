@@ -107,7 +107,8 @@ jobs:
           set -euo pipefail
           for deb in dist/*.deb; do
             dpkg-deb --field "$deb" Package Version Architecture
-            dpkg-deb --contents "$deb" | grep -q '/Library/MobileSubstrate/DynamicLibraries/vcam.dylib'
+            dpkg-deb --contents "$deb" > "$RUNNER_TEMP/vcam-package-contents.txt"
+            grep -F 'vcam.dylib' "$RUNNER_TEMP/vcam-package-contents.txt"
           done
           shasum -a 256 dist/*.deb > dist/SHA256SUMS
 
