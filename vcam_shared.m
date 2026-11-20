@@ -13,7 +13,7 @@ NSString * const VCamOffsetYKey = @"OffsetY";
 NSString * const VCamRotationKey = @"Rotation";
 NSString * const VCamZoomKey = @"Zoom";
 NSString * const VCamVideoPausedKey = @"VideoPaused";
-NSString * const VCamRuntimeVersion = @"0.1.35-diag4";
+NSString * const VCamRuntimeVersion = @"0.1.35-diag5";
 
 static NSString *VCamCurrentDaemonName(void);
 static int VCamNotifyTokenForName(NSString *name);
@@ -433,7 +433,8 @@ void VCamResetRuntimeStatus(void) {
 }
 
 NSString *VCamMediaDirectory(void) {
-    // The iOS 18 cameracaptured sandbox denies /tmp and /var/mobile/Media,
-    // but the rootless jailbreak prefix is readable by the camera daemon.
-    return @"/var/jb/tmp/VCamMedia";
+    // cameracaptured on iOS 18 denies /tmp and /var/mobile/Media. This
+    // persistent, mobile-owned jailbreak path is writable by the menu and
+    // readable by the camera daemon.
+    return @"/var/jb/var/mobile/VCam/Media";
 }

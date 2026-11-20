@@ -13,6 +13,13 @@
 - Import selected media into `/var/mobile/Media/VCam/Media` instead of `/tmp/VCamMedia`, alongside the persistent settings. A selection made before this change must be imported again through the menu.
 - The persistent path is a hypothesis for media readability by `cameracaptured`; it still requires a device test. Keep the 0.1.34 rollback package available.
 
+## Device result through 0.1.35-diag5
+
+- The 0.1.35-diag3 live log proved `cameracaptured` installed the `BWNodeOutput` hook and received 2304x1728 video buffers. Its `open()` of media under `/var/mobile/Media/VCam/Media` failed with `EPERM`.
+- Moving the synthetic PNG under `/var/jb/tmp` made the `media` and `render` stages appear. This isolated the failure to the media path rather than injection, frame delivery, or ImageIO.
+- The persistent `/var/jb/var/mobile/VCam/Media` directory is writable by `mobile`. After selecting the same synthetic PNG there and restarting `cameracaptured`, all eight stages appeared again, including `media` and `render`.
+- 0.1.35-diag5 uses that persistent path for future imports. A fresh import through the SpringBoard picker and a visual camera check remain to be tested. The current selection is the synthetic checkerboard image.
+
 ## Changes in 0.1.35-diag1
 
 - Added a Darwin notification stage bitmap for constructor, CMCapture load, class, selector, hook, first frame, media load, and first render. This survives failure to write the supplementary plist.
