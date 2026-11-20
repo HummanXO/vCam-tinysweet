@@ -29,3 +29,7 @@ Run `bash scripts/diagnose-local.sh` from this fork's directory inside `/Users/a
 - Dopamine issue [#974](https://github.com/opa334/Dopamine/issues/974) reports a similar symptom on iPhone 11 with iOS 18.3.2; it has no resolution as of this review.
 
 These reports are possible leads, not proof of the cause on this device.
+
+## Rollback for a later controlled install
+
+Before installing a diagnostic build, retain the known-working `0.1.34` package or a package-manager download. If the camera daemon crashes after installation, disable Tweak Injection through Dopamine, remove `0.1.35-diag1` through Sileo/Zebra, then reinstall `0.1.34` and re-enable injection. Do not repeatedly restart a crashing camera service to collect more data.
