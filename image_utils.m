@@ -230,6 +230,7 @@ static BOOL VCamDecodeImage(NSString *path, UIImage **imageOut) {
     if (imageOut) *imageOut = image;
 
     VCamSetRuntimeStatus(@"mediaState", @"loaded-image");
+    VCamSetRuntimeStatus(@"replacementMediaLoaded", @YES);
     VCamSetRuntimeStatus(@"mediaDetail", [NSString stringWithFormat:@"Photo decoded (%zux%zu, original pixel dimensions)", decodedWidth, decodedHeight]);
     return YES;
 }
@@ -295,6 +296,7 @@ static BOOL VCamPrepareVideo(NSString *path,
     if (preferredTransformOut) *preferredTransformOut = videoTrack.preferredTransform;
 
     VCamSetRuntimeStatus(@"mediaState", @"loaded-video");
+    VCamSetRuntimeStatus(@"replacementMediaLoaded", @YES);
     VCamSetRuntimeStatus(@"mediaDetail", @"Video player ready; imported video is normalized to a camera-friendly 1080p/30 FPS stream when supported");
     return YES;
 }
