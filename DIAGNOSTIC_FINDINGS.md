@@ -19,6 +19,7 @@
 - Moving the synthetic PNG under `/var/jb/tmp` made the `media` and `render` stages appear. This isolated the failure to the media path rather than injection, frame delivery, or ImageIO.
 - The persistent `/var/jb/var/mobile/VCam/Media` directory is writable by `mobile`. After selecting the same synthetic PNG there and restarting `cameracaptured`, all eight stages appeared again, including `media` and `render`.
 - 0.1.35-diag5 uses that persistent path for future imports. A fresh import through the SpringBoard picker and a visual camera check remain to be tested. The current selection is the synthetic checkerboard image.
+- A synthetic H.264 MP4 was readable but repeatedly crashed `cameracaptured`. A redacted crash report shows an uncaught Objective-C exception at `-[AVPlayerItem(AVPlayerItemOutputs) addOutput:]`. Returning to the test PNG stopped the crash loop. 0.1.35-diag6 catches this exception so the camera service remains alive, but video replacement needs a different decode path.
 
 ## Changes in 0.1.35-diag1
 

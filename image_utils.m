@@ -264,7 +264,16 @@ static BOOL VCamPrepareVideo(NSString *path,
     };
     AVPlayerItemVideoOutput *videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixelAttributes];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
-    [item addOutput:videoOutput];
+    @try {
+        [item addOutput:videoOutput];
+    } @catch (NSException *exception) {
+        // iOS 18 cameracaptured may reject AVPlayerItemVideoOutput. Keep the
+        // camera daemon alive and report the unsupported video path instead.
+        NSLog(@"[VCam] video output setup failed: %@", exception.reason ?: exception.name);
+        VCamSetRuntimeStatus(@"mediaState", @"video-output-unavailable");
+        VCamSetRuntimeStatus(@"mediaDetail", exception.reason ?: @"AVPlayerItemVideoOutput unavailable in camera daemon");
+        return NO;
+    }
     // Keep a small decode-ahead window. The camera render callback consumes
     // cached frames from a separate queue, so AVPlayer can use normal stall recovery.
     item.preferredForwardBufferDuration = 0.25;

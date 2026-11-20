@@ -13,7 +13,7 @@ NSString * const VCamOffsetYKey = @"OffsetY";
 NSString * const VCamRotationKey = @"Rotation";
 NSString * const VCamZoomKey = @"Zoom";
 NSString * const VCamVideoPausedKey = @"VideoPaused";
-NSString * const VCamRuntimeVersion = @"0.1.35-diag5";
+NSString * const VCamRuntimeVersion = @"0.1.35-diag6";
 
 static NSString *VCamCurrentDaemonName(void);
 static int VCamNotifyTokenForName(NSString *name);
