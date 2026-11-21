@@ -281,10 +281,8 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     titleGroup.axis = UILayoutConstraintAxisVertical;
     titleGroup.alignment = UIStackViewAlignmentLeading;
     titleGroup.spacing = 1;
-    UILabel *title = VCamMakeLabel(@"VCam", [UIFont systemFontOfSize:22 weight:UIFontWeightBold], UIColor.whiteColor);
-    UILabel *byline = VCamMakeLabel(@"by tinysweet", [UIFont systemFontOfSize:11 weight:UIFontWeightMedium], [UIColor colorWithWhite:1 alpha:0.58]);
+    UILabel *title = VCamMakeLabel(@"Camera Source", [UIFont systemFontOfSize:22 weight:UIFontWeightBold], UIColor.whiteColor);
     [titleGroup addArrangedSubview:title];
-    [titleGroup addArrangedSubview:byline];
     [header addArrangedSubview:titleGroup];
     [header addArrangedSubview:[[UIView alloc] init]];
     UIButton *close = VCamMakeButton(@"✕", [UIColor colorWithWhite:1 alpha:0.12], self, @selector(closeMenu));
@@ -384,7 +382,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     UIButton *copyDiagnostics = VCamMakeButton(@"Copy Logs", [UIColor colorWithWhite:1 alpha:0.12], self, @selector(copyDiagnostics));
     [_logsContainer addArrangedSubview:copyDiagnostics];
 
-    UILabel *footer = VCamMakeLabel(@"Press Volume Up + Volume Down together to open or close VCam.",
+    UILabel *footer = VCamMakeLabel(@"Press Volume Up + Volume Down together to open or close this menu.",
                                     [UIFont systemFontOfSize:12], [UIColor colorWithWhite:1 alpha:0.60]);
     [stack addArrangedSubview:footer];
 
@@ -747,7 +745,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     } else if ([mediaState isEqualToString:@"no-selection"]) {
         [lines addObject:@"Action: choose a photo or video."];
     } else if ([mediaState isEqualToString:@"file-not-readable"]) {
-        [lines addObject:@"Action: check Media file access and errno; confirm the camera daemon can open the file under /tmp/VCamMedia."];
+        [lines addObject:@"Action: check Media file access and errno; confirm the camera daemon can open the shared media file."];
     } else if ([mediaState isEqualToString:@"video-player-failed"]) {
         [lines addObject:@"Action: video playback was stopped safely. Re-import a compatible video; check Video player error for details."];
     } else if ([mediaState containsString:@"failed"] || [mediaState containsString:@"not-found"] || [mediaState containsString:@"missing"]) {
