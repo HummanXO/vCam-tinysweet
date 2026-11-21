@@ -65,6 +65,31 @@
 %end
 %end
 
+%group VCamRecordingHook
+%hook BWVideoCompressorNode
+
+- (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
+    CVPixelBufferRef buffer = sampleBuffer ? CMSampleBufferGetImageBuffer(sampleBuffer) : NULL;
+    if (buffer) {
+        @autoreleasepool {
+            loadReplacementMedia();
+            if (CVPixelBufferLockBaseAddress(buffer, 0) == kCVReturnSuccess) {
+                @try {
+                    drawReplacementOntoBuffer(buffer);
+                } @catch (NSException *exception) {
+                    NSLog(@"[VCam] recording frame render failed: %@", exception.reason);
+                } @finally {
+                    CVPixelBufferUnlockBaseAddress(buffer, 0);
+                }
+            }
+        }
+    }
+    %orig(sampleBuffer, input);
+}
+
+%end
+%end
+
 static void *sCMCaptureHandle = NULL;
 static BOOL sVCamHookInstalled = NO;
 static NSUInteger sVCamHookAttempts = 0;
@@ -91,6 +116,12 @@ static void VCamTryInstallCaptureHook(void) {
 
     if (outputClass && outputMethod) {
         %init(VCamCaptureHooks);
+        Class compressor = objc_getClass("BWVideoCompressorNode");
+        SEL render = sel_registerName("renderSampleBuffer:forInput:");
+        if (compressor && class_getInstanceMethod(compressor, render)) {
+            %init(VCamRecordingHook);
+            NSLog(@"[VCam] installed recording input hook");
+        }
         sVCamHookInstalled = YES;
         VCamSetRuntimeStatus(@"hookState", @"installed");
         VCamSetRuntimeStatus(@"hookInstalledAt", [NSDate date]);
