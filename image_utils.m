@@ -637,8 +637,8 @@ void loadReplacementMedia(void) {
     });
 }
 
-void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
-    if (!targetBuffer) return;
+BOOL drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
+    if (!targetBuffer) return NO;
     VCamEnsureState();
 
     UIImage *replacementImage = nil;
@@ -653,7 +653,7 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
     CGColorSpaceRef renderColorSpace = NULL;
 
     @synchronized (sLock) {
-        if (!sEnabled || sCurrentMode == VCamModeNone || !sRenderContext) return;
+        if (!sEnabled || sCurrentMode == VCamModeNone || !sRenderContext) return NO;
         mode = sCurrentMode;
         replacementImage = sReplacementImage;
         videoTransform = sVideoPreferredTransform;
@@ -691,14 +691,14 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
 
     if (!source) {
         if (videoBuffer) CVPixelBufferRelease(videoBuffer);
-        return;
+        return NO;
     }
 
     size_t targetWidth = CVPixelBufferGetWidth(targetBuffer);
     size_t targetHeight = CVPixelBufferGetHeight(targetBuffer);
     if (targetWidth == 0 || targetHeight == 0) {
         if (videoBuffer) CVPixelBufferRelease(videoBuffer);
-        return;
+        return NO;
     }
     CGRect targetRect = CGRectMake(0, 0, targetWidth, targetHeight);
 
@@ -741,4 +741,5 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
             }
         }
     }
+    return YES;
 }

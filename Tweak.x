@@ -65,38 +65,84 @@
 %end
 %end
 
+static CMSampleBufferRef VCamCreateRecordingSample(CMSampleBufferRef original, CVPixelBufferRef input) {
+    CMSampleTimingInfo timing;
+    if (CMSampleBufferGetNumSamples(original) != 1 ||
+        CMSampleBufferGetSampleTimingInfo(original, 0, &timing) != noErr) return NULL;
+
+    NSDictionary *attributes = @{ (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{} };
+    CVPixelBufferRef frame = NULL;
+    CVReturn result = CVPixelBufferCreate(kCFAllocatorDefault, CVPixelBufferGetWidth(input),
+        CVPixelBufferGetHeight(input), CVPixelBufferGetPixelFormatType(input),
+        (__bridge CFDictionaryRef)attributes, &frame);
+    if (result != kCVReturnSuccess) {
+        static dispatch_once_t allocationFailure;
+        dispatch_once(&allocationFailure, ^{
+            NSLog(@"[VCam] recording buffer allocation failed: %d, format %08x",
+                  result, (unsigned int)CVPixelBufferGetPixelFormatType(input));
+        });
+        return NULL;
+    }
+
+    CMSampleBufferRef replacement = NULL;
+    CMVideoFormatDescriptionRef format = NULL;
+    @try {
+        CVBufferPropagateAttachments(input, frame);
+        if (drawReplacementOntoBuffer(frame) &&
+            CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, frame, &format) == noErr &&
+            CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, frame, format, &timing, &replacement) == noErr) {
+            for (int mode = kCMAttachmentMode_ShouldNotPropagate; mode <= kCMAttachmentMode_ShouldPropagate; mode++) {
+                CFDictionaryRef attachments = CMCopyDictionaryOfAttachments(kCFAllocatorDefault, original, mode);
+                if (attachments) {
+                    CMSetAttachments(replacement, attachments, mode);
+                    CFRelease(attachments);
+                }
+            }
+            CFArrayRef oldSamples = CMSampleBufferGetSampleAttachmentsArray(original, false);
+            if (oldSamples && CFArrayGetCount(oldSamples) == 1) {
+                CFArrayRef newSamples = CMSampleBufferGetSampleAttachmentsArray(replacement, true);
+                if (newSamples && CFArrayGetCount(newSamples) == 1) {
+                    NSDictionary *source = (__bridge NSDictionary *)CFArrayGetValueAtIndex(oldSamples, 0);
+                    NSMutableDictionary *target = (__bridge NSMutableDictionary *)CFArrayGetValueAtIndex(newSamples, 0);
+                    [target addEntriesFromDictionary:source];
+                }
+            }
+        }
+    } @catch (NSException *exception) {
+        if (replacement) CFRelease(replacement);
+        replacement = NULL;
+        NSLog(@"[VCam] recording frame render failed: %@", exception.reason);
+    } @finally {
+        if (format) CFRelease(format);
+        CVPixelBufferRelease(frame);
+    }
+    return replacement;
+}
+
 %group VCamRecordingHook
 %hook BWVideoCompressorNode
 
 - (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
     CVPixelBufferRef buffer = sampleBuffer ? CMSampleBufferGetImageBuffer(sampleBuffer) : NULL;
-    static dispatch_once_t firstRecordingInput;
-    dispatch_once(&firstRecordingInput, ^{
-        NSLog(@"[VCam] compressor input: image=%d size=%zux%zu format=%08x",
-              buffer != NULL, buffer ? CVPixelBufferGetWidth(buffer) : 0,
-              buffer ? CVPixelBufferGetHeight(buffer) : 0,
-              buffer ? (unsigned int)CVPixelBufferGetPixelFormatType(buffer) : 0);
-    });
-    if (buffer) {
+    CMSampleBufferRef replacement = NULL;
+    if (buffer && [VCamCopySetting(VCamEnabledKey) boolValue] &&
+        [VCamCopySetting(VCamSourceModeKey) isEqualToString:@"live"]) {
         @autoreleasepool {
             loadReplacementMedia();
-            CVReturn lockStatus = CVPixelBufferLockBaseAddress(buffer, 0);
-            static dispatch_once_t firstRecordingLock;
-            dispatch_once(&firstRecordingLock, ^{
-                NSLog(@"[VCam] compressor input lock: %d", lockStatus);
-            });
-            if (lockStatus == kCVReturnSuccess) {
-                @try {
-                    drawReplacementOntoBuffer(buffer);
-                } @catch (NSException *exception) {
-                    NSLog(@"[VCam] recording frame render failed: %@", exception.reason);
-                } @finally {
-                    CVPixelBufferUnlockBaseAddress(buffer, 0);
-                }
-            }
+            replacement = VCamCreateRecordingSample(sampleBuffer, buffer);
         }
     }
-    %orig(sampleBuffer, input);
+    if (replacement) {
+        static dispatch_once_t firstReplacement;
+        dispatch_once(&firstReplacement, ^{
+            NSLog(@"[VCam] sending replacement sample to movie compressor");
+        });
+    }
+    @try {
+        %orig(replacement ?: sampleBuffer, input);
+    } @finally {
+        if (replacement) CFRelease(replacement);
+    }
 }
 
 %end
