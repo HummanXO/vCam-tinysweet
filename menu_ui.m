@@ -1145,13 +1145,22 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     CGFloat value = [VCamCopySetting(VCamOffsetYKey) respondsToSelector:@selector(doubleValue)] ? [VCamCopySetting(VCamOffsetYKey) doubleValue] : 0.0;
     VCamSetSetting(VCamOffsetYKey, @(MAX(-1.0, MIN(1.0, value + delta))));
 }
-// The camera pixel buffer is oriented 90 degrees relative to the portrait
-// preview on this device. Map screen-space D-pad directions onto buffer axes
-// so each arrow moves the replacement in the direction shown by the UI.
-- (void)moveLeft { [self adjustOffsetY:-VCamCurrentMoveStep()]; }
-- (void)moveRight { [self adjustOffsetY:VCamCurrentMoveStep()]; }
-- (void)moveUp { [self adjustOffsetX:VCamCurrentMoveStep()]; }
-- (void)moveDown { [self adjustOffsetX:-VCamCurrentMoveStep()]; }
+// LIVE OBS uses the preview's axes. Keep the legacy mapping for local media.
+- (void)moveByScreenX:(CGFloat)x y:(CGFloat)y {
+    CGFloat step = VCamCurrentMoveStep();
+    if ([VCamCopySetting(VCamSourceModeKey) isEqualToString:@"live"]) {
+        if (x != 0) [self adjustOffsetX:x * step];
+        if (y != 0) [self adjustOffsetY:y * step];
+    } else {
+        if (y != 0) [self adjustOffsetX:-y * step];
+        if (x != 0) [self adjustOffsetY:x * step];
+    }
+}
+
+- (void)moveLeft { [self moveByScreenX:-1 y:0]; }
+- (void)moveRight { [self moveByScreenX:1 y:0]; }
+- (void)moveUp { [self moveByScreenX:0 y:-1]; }
+- (void)moveDown { [self moveByScreenX:0 y:1]; }
 - (void)resetPosition { VCamSetSetting(VCamOffsetXKey, @0.0); VCamSetSetting(VCamOffsetYKey, @0.0); }
 // Core Image uses a y-up coordinate system: positive angles rotate
 // counter-clockwise on screen. Keep the button labels aligned with that
