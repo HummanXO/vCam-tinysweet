@@ -36,6 +36,8 @@ VCam can use the current OBS scene as its camera image. OBS outputs H.264/MPEG-T
 5. Find the iPhone Wi-Fi address in **Settings → Wi-Fi → ⓘ**. In a Mac Terminal run `python3 scripts/obs-relay.py --iphone IPHONE_WIFI_IP` from this repository. Leave it running. Its first run fetches the token over USB SSH.
 6. In OBS choose any scene and click **Start Recording**. This button starts the URL output configured above; it does not create a local recording file. On iPhone press **Volume Up + Volume Down**, select **LIVE OBS**, then open Camera. Changing scenes in OBS updates subsequent iPhone frames. Use **Disable Replacement** or **Real Camera** to return to the real feed without a respring.
 
+If both devices are connected by USB, run `bash scripts/obs-usb.sh` instead of step 5. The same OBS settings work; the script forwards the authenticated receiver connection over USB. The existing SSH USB tunnel on port `2222` must be running for the first token fetch.
+
 The menu reports connection, FPS, resolution, received-frame age, approximate relay-to-receiver delay, dropped frames, and the last receiver error. The delay metric excludes OBS capture/encode time and camera display time. The receiver retains one complete last frame across a lost connection; the relay's one-slot queue discards old frames to avoid growing lag. Current transport re-encodes to JPEG on the Mac, so it is more bandwidth intensive than native H.264 decoding on iPhone. Audio is not implemented.
 
 #### Automated frame test
