@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <dispatch/dispatch.h>
+#import <VideoToolbox/VTPixelTransferSession.h>
 
 // BWNodeOutput is declared by Apple's private CMCapture framework. On some
 // iOS builds it is not registered when a camera daemon first loads third-party
@@ -65,6 +66,44 @@
 %end
 %end
 
+static BOOL VCamRenderRecordingFrame(CVPixelBufferRef frame, CFDictionaryRef attributes) {
+    if (CVPixelBufferGetPixelFormatType(frame) == kCVPixelFormatType_32BGRA) {
+        return drawReplacementOntoBuffer(frame);
+    }
+
+    static VTPixelTransferSessionRef transfer;
+    static NSObject *transferLock;
+    static dispatch_once_t setupTransfer;
+    dispatch_once(&setupTransfer, ^{
+        transferLock = [[NSObject alloc] init];
+        VTPixelTransferSessionCreate(kCFAllocatorDefault, &transfer);
+    });
+    if (!transfer) return NO;
+
+    CVPixelBufferRef rgb = NULL;
+    CVReturn allocation = CVPixelBufferCreate(kCFAllocatorDefault, CVPixelBufferGetWidth(frame),
+        CVPixelBufferGetHeight(frame), kCVPixelFormatType_32BGRA, attributes, &rgb);
+    if (allocation != kCVReturnSuccess) return NO;
+
+    @try {
+        if (!drawReplacementOntoBuffer(rgb)) return NO;
+        OSStatus result;
+        @synchronized (transferLock) {
+            result = VTPixelTransferSessionTransferImage(transfer, rgb, frame);
+        }
+        if (result != noErr) {
+            static dispatch_once_t transferFailure;
+            dispatch_once(&transferFailure, ^{
+                NSLog(@"[VCam] movie pixel transfer failed: %d, format %08x",
+                      (int)result, (unsigned int)CVPixelBufferGetPixelFormatType(frame));
+            });
+        }
+        return result == noErr;
+    } @finally {
+        CVPixelBufferRelease(rgb);
+    }
+}
+
 static CMSampleBufferRef VCamCreateRecordingSample(CMSampleBufferRef original, CVPixelBufferRef input) {
     CMSampleTimingInfo timing;
     if (CMSampleBufferGetNumSamples(original) != 1 ||
@@ -88,7 +127,7 @@ static CMSampleBufferRef VCamCreateRecordingSample(CMSampleBufferRef original, C
     CMVideoFormatDescriptionRef format = NULL;
     @try {
         CVBufferPropagateAttachments(input, frame);
-        if (drawReplacementOntoBuffer(frame) &&
+        if (VCamRenderRecordingFrame(frame, (__bridge CFDictionaryRef)attributes) &&
             CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, frame, &format) == noErr &&
             CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, frame, format, &timing, &replacement) == noErr) {
             for (int mode = kCMAttachmentMode_ShouldNotPropagate; mode <= kCMAttachmentMode_ShouldPropagate; mode++) {
