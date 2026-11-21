@@ -109,6 +109,7 @@ jobs:
             dpkg-deb --field "$deb" Package Version Architecture
             dpkg-deb --contents "$deb" > "$RUNNER_TEMP/vcam-package-contents.txt"
             grep -F 'vcam.dylib' "$RUNNER_TEMP/vcam-package-contents.txt"
+            grep -F 'vcam-obs-receiver.py' "$RUNNER_TEMP/vcam-package-contents.txt"
           done
           shasum -a 256 dist/*.deb > dist/SHA256SUMS
 
@@ -116,6 +117,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vcam-deb-packages
-          path: dist/*.deb
+          path: dist/*
           if-no-files-found: error
           retention-days: 14

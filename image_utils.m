@@ -114,9 +114,14 @@ static void VCamStartLiveFramePumpLocked(void) {
             CGImageRelease(frame);
             @synchronized (sLock) {
                 if (!sLiveActive || !sEnabled || !sLiveFrameTimer) return;
+                BOOL firstFrame = sLiveFileNumber == 0;
                 sLiveFileNumber = fileNumber;
                 sReplacementImage = image;
                 sCurrentMode = VCamModeImage;
+                if (firstFrame) {
+                    VCamSetRuntimeStatus(@"replacementMediaLoaded", @YES);
+                    NSLog(@"[VCam] LIVE OBS first frame accepted: %zux%zu", CGImageGetWidth(image.CGImage), CGImageGetHeight(image.CGImage));
+                }
                 VCamSetRuntimeStatus(@"mediaState", @"live-ready");
                 VCamSetRuntimeStatus(@"mediaDetail", [NSString stringWithFormat:@"LIVE OBS %zux%zu", CGImageGetWidth(image.CGImage), CGImageGetHeight(image.CGImage)]);
             }

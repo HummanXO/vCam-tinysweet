@@ -29,7 +29,7 @@ VCam can use the current OBS scene as its camera image. OBS outputs H.264/MPEG-T
 
 #### Setup on Mac and iPhone
 
-1. Install the `0.1.36-live1` rootless package on the Dopamine iPhone. The receiver needs the jailbreak `python3` package and listens on TCP port `47110`. Keep Mac and iPhone on the same Wi-Fi network and allow this port through any local firewall.
+1. Install the `0.1.36-live2` rootless package on the Dopamine iPhone. The receiver needs the jailbreak `python3` package and listens on TCP port `47110`. Keep Mac and iPhone on the same Wi-Fi network and allow this port through any local firewall.
 2. On the Mac install FFmpeg (`brew install ffmpeg`). Connect the iPhone by USB once so the relay can securely fetch the receiver's random token using the project's pinned SSH helper. The token is cached in `iPhone11JB/data/vcam-obs-token.hex` with owner-only permissions. Later runs can use Wi-Fi alone.
 3. In OBS set **Settings → Video → Output (Scaled) Resolution** to `1280×720` and **Common FPS Values** to `30`.
 4. In **Settings → Output**, set **Output Mode: Advanced**. On the **Recording** tab set **Type: Custom Output (FFmpeg)**, **FFmpeg Output Type: Output to URL**, **File path or URL: `udp://127.0.0.1:47111?pkt_size=1316`**, **Container Format: `mpegts`**, **Video Encoder: `libx264`**, **Video Bitrate: `4000` Kbps**, **Keyframe interval: `30` frames**. If encoder settings are exposed, use `preset=veryfast tune=zerolatency`. Audio may remain disabled; it is not sent to the iPhone camera.
