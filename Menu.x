@@ -122,6 +122,9 @@ static void VCamTryInstallVolumeActionHooks(void) {
             if (wrote) [[NSFileManager defaultManager] removeItemAtPath:probe error:nil];
             NSLog(@"[VCam] SpringBoard shared media write probe: %@%@", wrote ? @"OK" : @"FAILED",
                   probeError ? [NSString stringWithFormat:@" (%@)", probeError] : @"");
+            // Re-publish the persisted source immediately after a respring so
+            // cameracaptured can select LIVE OBS before the menu is opened.
+            VCamCopySetting(VCamSourceModeKey);
             VCamTryInstallVolumeActionHooks();
             [VCamMenuPresenter installOverlay];
         });
