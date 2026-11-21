@@ -29,6 +29,8 @@ VCam can use the current OBS scene as its camera image. OBS outputs H.264/MPEG-T
 
 #### Setup on Mac and iPhone
 
+For a landscape clip, start with MP4 (H.264), 1920×1080 or 1280×720, at 30 FPS. Set both the OBS canvas and output to a 16:9 resolution. In the source's transform menu, reset the transform and choose Fit to Screen. In LIVE OBS, use 1× zoom and reset position to see the whole frame. Different camera and OBS aspect ratios can produce black bars. Increasing zoom crops the edges.
+
 1. Install the `0.1.36-live7` rootless package on the Dopamine iPhone. The receiver needs the jailbreak `python3` package and listens on TCP port `47110`. Keep Mac and iPhone on the same Wi-Fi network and allow this port through any local firewall.
 2. On the Mac install FFmpeg (`brew install ffmpeg`). Connect the iPhone by USB once so the relay can securely fetch the receiver's random token using the project's pinned SSH helper. The token is cached in `iPhone11JB/data/vcam-obs-token.hex` with owner-only permissions. Later runs can use Wi-Fi alone.
 3. In OBS set **Settings → Video → Output (Scaled) Resolution** to `1280×720` and **Common FPS Values** to `30`.

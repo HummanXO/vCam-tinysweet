@@ -648,6 +648,7 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
     CGFloat offsetYValue = 0.0;
     CGFloat zoomValue = 1.0;
     NSInteger rotationValue = 0;
+    BOOL fitLiveFrame = NO;
     CIContext *renderContext = nil;
     CGColorSpaceRef renderColorSpace = NULL;
 
@@ -660,6 +661,7 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
         offsetYValue = sOffsetY;
         zoomValue = sZoom;
         rotationValue = sRotation;
+        fitLiveFrame = sLiveActive;
         renderContext = sRenderContext;
         renderColorSpace = sRenderColorSpace;
     }
@@ -707,8 +709,9 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
     if (fabs(radians) > 0.0001) source = [source imageByApplyingTransform:CGAffineTransformMakeRotation(radians)];
 
     CGRect rotatedExtent = source.extent;
-    CGFloat fitScale = MAX((CGFloat)targetWidth / MAX(rotatedExtent.size.width, 1.0),
-                           (CGFloat)targetHeight / MAX(rotatedExtent.size.height, 1.0));
+    CGFloat widthScale = (CGFloat)targetWidth / MAX(rotatedExtent.size.width, 1.0);
+    CGFloat heightScale = (CGFloat)targetHeight / MAX(rotatedExtent.size.height, 1.0);
+    CGFloat fitScale = fitLiveFrame ? MIN(widthScale, heightScale) : MAX(widthScale, heightScale);
     CGFloat scale = fitScale * zoomValue;
     source = [source imageByApplyingTransform:CGAffineTransformMakeScale(scale, scale)];
     CGRect scaledExtent = source.extent;
