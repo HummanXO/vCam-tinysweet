@@ -2,6 +2,7 @@
 #import <sys/stat.h>
 #import <notify.h>
 #import <time.h>
+#import <string.h>
 #import <dispatch/dispatch.h>
 
 NSString * const VCamPreferenceDomain = @"com.tinysweet.vcamios";
@@ -14,7 +15,7 @@ NSString * const VCamRotationKey = @"Rotation";
 NSString * const VCamZoomKey = @"Zoom";
 NSString * const VCamVideoPausedKey = @"VideoPaused";
 NSString * const VCamSourceModeKey = @"SourceMode";
-NSString * const VCamRuntimeVersion = @"0.1.36-live4";
+NSString * const VCamRuntimeVersion = @"0.1.36-live5";
 
 static NSString *VCamCurrentDaemonName(void);
 static int VCamNotifyTokenForName(NSString *name);
@@ -182,7 +183,7 @@ static BOOL VCamReadPublishedStringSetting(NSString *key, NSString **valueOut) {
     }
 
     NSString *decoded = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    if (!decoded) return NO;
+    if (!decoded || (data.length > 0 && memchr(data.bytes, 0, data.length) != NULL)) return NO;
     if (valueOut) *valueOut = decoded;
     return YES;
 }

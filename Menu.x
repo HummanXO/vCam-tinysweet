@@ -122,9 +122,12 @@ static void VCamTryInstallVolumeActionHooks(void) {
             if (wrote) [[NSFileManager defaultManager] removeItemAtPath:probe error:nil];
             NSLog(@"[VCam] SpringBoard shared media write probe: %@%@", wrote ? @"OK" : @"FAILED",
                   probeError ? [NSString stringWithFormat:@" (%@)", probeError] : @"");
-            // Re-publish the persisted source immediately after a respring so
-            // cameracaptured can select LIVE OBS before the menu is opened.
-            VCamCopySetting(VCamSourceModeKey);
+            // notifyd may retain the string length after the previous
+            // SpringBoard exits while its chunk tokens are gone. Publish from
+            // the persistent plist instead of trusting that transient state.
+            NSDictionary *persisted = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Media/VCam/settings.plist"];
+            NSString *sourceMode = persisted[VCamSourceModeKey];
+            if ([sourceMode isKindOfClass:NSString.class]) VCamSetSetting(VCamSourceModeKey, sourceMode);
             VCamTryInstallVolumeActionHooks();
             [VCamMenuPresenter installOverlay];
         });
