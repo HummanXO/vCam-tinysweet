@@ -3,4 +3,4 @@
 
 // Refreshes shared settings cheaply and loads changed media asynchronously.
 void loadReplacementMedia(void);
-BOOL drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer);
+BOOL drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer, BOOL orientForCapture);

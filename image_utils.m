@@ -637,7 +637,7 @@ void loadReplacementMedia(void) {
     });
 }
 
-BOOL drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
+BOOL drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer, BOOL orientForCapture) {
     if (!targetBuffer) return NO;
     VCamEnsureState();
 
@@ -705,6 +705,12 @@ BOOL drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
     CGRect sourceExtent = source.extent;
     source = [source imageByApplyingTransform:CGAffineTransformMakeTranslation(-sourceExtent.origin.x,
                                                                                 -sourceExtent.origin.y)];
+    // The iPhone writes portrait capture with a clockwise display transform.
+    // Place the portrait OBS scene sideways in the landscape encoder buffer.
+    if (orientForCapture && fitLiveFrame && targetWidth > targetHeight &&
+        sourceExtent.size.height > sourceExtent.size.width) {
+        rotationValue += 90;
+    }
     CGFloat radians = ((CGFloat)(rotationValue % 360)) * (CGFloat)M_PI / 180.0;
     if (fabs(radians) > 0.0001) source = [source imageByApplyingTransform:CGAffineTransformMakeRotation(radians)];
 

@@ -51,7 +51,7 @@
                   (unsigned int)CVPixelBufferGetPixelFormatType(imageBuffer));
         });
         @try {
-            drawReplacementOntoBuffer(imageBuffer);
+            drawReplacementOntoBuffer(imageBuffer, NO);
         } @catch (NSException *exception) {
             VCamSetRuntimeStatus(@"renderError", exception.reason ?: @"Unknown render exception");
             NSLog(@"[VCam] Failed to render replacement media: %@", exception);
@@ -68,7 +68,7 @@
 
 static BOOL VCamRenderRecordingFrame(CVPixelBufferRef frame, CFDictionaryRef attributes) {
     if (CVPixelBufferGetPixelFormatType(frame) == kCVPixelFormatType_32BGRA) {
-        return drawReplacementOntoBuffer(frame);
+        return drawReplacementOntoBuffer(frame, YES);
     }
 
     static VTPixelTransferSessionRef transfer;
@@ -86,7 +86,7 @@ static BOOL VCamRenderRecordingFrame(CVPixelBufferRef frame, CFDictionaryRef att
     if (allocation != kCVReturnSuccess) return NO;
 
     @try {
-        if (!drawReplacementOntoBuffer(rgb)) return NO;
+        if (!drawReplacementOntoBuffer(rgb, YES)) return NO;
         OSStatus result;
         @synchronized (transferLock) {
             result = VTPixelTransferSessionTransferImage(transfer, rgb, frame);
@@ -158,23 +158,47 @@ static CMSampleBufferRef VCamCreateRecordingSample(CMSampleBufferRef original, C
     return replacement;
 }
 
+static CMSampleBufferRef VCamCopyLiveCaptureSample(CMSampleBufferRef sampleBuffer) {
+    CVPixelBufferRef buffer = sampleBuffer ? CMSampleBufferGetImageBuffer(sampleBuffer) : NULL;
+    if (!buffer || ![VCamCopySetting(VCamEnabledKey) boolValue] ||
+        ![VCamCopySetting(VCamSourceModeKey) isEqualToString:@"live"]) return NULL;
+
+    @autoreleasepool {
+        loadReplacementMedia();
+        return VCamCreateRecordingSample(sampleBuffer, buffer);
+    }
+}
+
 %group VCamRecordingHook
 %hook BWVideoCompressorNode
 
 - (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
-    CVPixelBufferRef buffer = sampleBuffer ? CMSampleBufferGetImageBuffer(sampleBuffer) : NULL;
-    CMSampleBufferRef replacement = NULL;
-    if (buffer && [VCamCopySetting(VCamEnabledKey) boolValue] &&
-        [VCamCopySetting(VCamSourceModeKey) isEqualToString:@"live"]) {
-        @autoreleasepool {
-            loadReplacementMedia();
-            replacement = VCamCreateRecordingSample(sampleBuffer, buffer);
-        }
-    }
+    CMSampleBufferRef replacement = VCamCopyLiveCaptureSample(sampleBuffer);
     if (replacement) {
         static dispatch_once_t firstReplacement;
         dispatch_once(&firstReplacement, ^{
             NSLog(@"[VCam] sending replacement sample to movie compressor");
+        });
+    }
+    @try {
+        %orig(replacement ?: sampleBuffer, input);
+    } @finally {
+        if (replacement) CFRelease(replacement);
+    }
+}
+
+%end
+%end
+
+%group VCamPhotoHook
+%hook BWPhotoEncoderNode
+
+- (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
+    CMSampleBufferRef replacement = VCamCopyLiveCaptureSample(sampleBuffer);
+    if (replacement) {
+        static dispatch_once_t firstReplacement;
+        dispatch_once(&firstReplacement, ^{
+            NSLog(@"[VCam] sending replacement sample to photo encoder");
         });
     }
     @try {
@@ -218,6 +242,11 @@ static void VCamTryInstallCaptureHook(void) {
         if (compressor && class_getInstanceMethod(compressor, render)) {
             %init(VCamRecordingHook);
             NSLog(@"[VCam] installed recording input hook");
+        }
+        Class photoEncoder = objc_getClass("BWPhotoEncoderNode");
+        if (photoEncoder && class_getInstanceMethod(photoEncoder, render)) {
+            %init(VCamPhotoHook);
+            NSLog(@"[VCam] installed photo encoder input hook");
         }
         sVCamHookInstalled = YES;
         VCamSetRuntimeStatus(@"hookState", @"installed");
