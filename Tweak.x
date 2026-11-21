@@ -40,14 +40,22 @@
 
     @autoreleasepool {
         loadReplacementMedia();
-        // CIContext renders directly to CVPixelBuffer. Locking the base address
-        // is only needed for CPU byte access and can force costly synchronization
-        // on GPU-backed camera buffers, causing preview stutter.
+        // On iOS 18 the capture service can hand out IOSurface-backed buffers.
+        // Keep the buffer locked through the write so downstream consumers see
+        // the completed replacement before emitSampleBuffer: forwards it.
+        CVReturn lockStatus = CVPixelBufferLockBaseAddress(imageBuffer, 0);
+        static dispatch_once_t sFirstLockResult;
+        dispatch_once(&sFirstLockResult, ^{
+            NSLog(@"[VCam] camera buffer lock status: %d (format %u)", lockStatus,
+                  (unsigned int)CVPixelBufferGetPixelFormatType(imageBuffer));
+        });
         @try {
             drawReplacementOntoBuffer(imageBuffer);
         } @catch (NSException *exception) {
             VCamSetRuntimeStatus(@"renderError", exception.reason ?: @"Unknown render exception");
             NSLog(@"[VCam] Failed to render replacement media: %@", exception);
+        } @finally {
+            if (lockStatus == kCVReturnSuccess) CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
         }
     }
 
