@@ -70,10 +70,22 @@
 
 - (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
     CVPixelBufferRef buffer = sampleBuffer ? CMSampleBufferGetImageBuffer(sampleBuffer) : NULL;
+    static dispatch_once_t firstRecordingInput;
+    dispatch_once(&firstRecordingInput, ^{
+        NSLog(@"[VCam] compressor input: image=%d size=%zux%zu format=%08x",
+              buffer != NULL, buffer ? CVPixelBufferGetWidth(buffer) : 0,
+              buffer ? CVPixelBufferGetHeight(buffer) : 0,
+              buffer ? (unsigned int)CVPixelBufferGetPixelFormatType(buffer) : 0);
+    });
     if (buffer) {
         @autoreleasepool {
             loadReplacementMedia();
-            if (CVPixelBufferLockBaseAddress(buffer, 0) == kCVReturnSuccess) {
+            CVReturn lockStatus = CVPixelBufferLockBaseAddress(buffer, 0);
+            static dispatch_once_t firstRecordingLock;
+            dispatch_once(&firstRecordingLock, ^{
+                NSLog(@"[VCam] compressor input lock: %d", lockStatus);
+            });
+            if (lockStatus == kCVReturnSuccess) {
                 @try {
                     drawReplacementOntoBuffer(buffer);
                 } @catch (NSException *exception) {
