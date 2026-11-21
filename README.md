@@ -23,6 +23,25 @@ VCam is intended for creative camera setups, LARP (live-action role-playing), ch
 - Pause and resume the clip from the floating controls.
 - Video frame extraction runs separately from the real-time camera callback. When camera frames stop arriving, VCam pauses video decoding to reduce unnecessary work and resumes when the camera pipeline becomes active again.
 
+### LIVE OBS CAMERA (iOS 18.3.2 rootless)
+
+VCam can use the current OBS scene as its camera image. OBS outputs H.264/MPEG-TS to a local UDP port on the Mac. `scripts/obs-relay.py` decodes it with FFmpeg (VideoToolbox when available), keeps only the latest frame, and sends JPEG frames over authenticated TCP to the separate iPhone receiver service. The camera hook does no networking or JPEG decoding: a background frame pump updates the image consumed by its existing render path. On disconnect, the last complete frame remains until replacement is disabled or another source is selected.
+
+#### Setup on Mac and iPhone
+
+1. Install the `0.1.36-live1` rootless package on the Dopamine iPhone. The receiver needs the jailbreak `python3` package and listens on TCP port `47110`. Keep Mac and iPhone on the same Wi-Fi network and allow this port through any local firewall.
+2. On the Mac install FFmpeg (`brew install ffmpeg`). Connect the iPhone by USB once so the relay can securely fetch the receiver's random token using the project's pinned SSH helper. The token is cached in `iPhone11JB/data/vcam-obs-token.hex` with owner-only permissions. Later runs can use Wi-Fi alone.
+3. In OBS set **Settings → Video → Output (Scaled) Resolution** to `1280×720` and **Common FPS Values** to `30`.
+4. In **Settings → Output**, set **Output Mode: Advanced**. On the **Recording** tab set **Type: Custom Output (FFmpeg)**, **FFmpeg Output Type: Output to URL**, **File path or URL: `udp://127.0.0.1:47111?pkt_size=1316`**, **Container Format: `mpegts`**, **Video Encoder: `libx264`**, **Video Bitrate: `4000` Kbps**, **Keyframe interval: `30` frames**. If encoder settings are exposed, use `preset=veryfast tune=zerolatency`. Audio may remain disabled; it is not sent to the iPhone camera.
+5. Find the iPhone Wi-Fi address in **Settings → Wi-Fi → ⓘ**. In a Mac Terminal run `python3 scripts/obs-relay.py --iphone IPHONE_WIFI_IP` from this repository. Leave it running. Its first run fetches the token over USB SSH.
+6. In OBS choose any scene and click **Start Recording**. This button starts the URL output configured above; it does not create a local recording file. On iPhone press **Volume Up + Volume Down**, select **LIVE OBS**, then open Camera. Changing scenes in OBS updates subsequent iPhone frames. Use **Disable Replacement** or **Real Camera** to return to the real feed without a respring.
+
+The menu reports connection, FPS, resolution, received-frame age, approximate relay-to-receiver delay, dropped frames, and the last receiver error. The delay metric excludes OBS capture/encode time and camera display time. The receiver retains one complete last frame across a lost connection; the relay's one-slot queue discards old frames to avoid growing lag. Current transport re-encodes to JPEG on the Mac, so it is more bandwidth intensive than native H.264 decoding on iPhone. Audio is not implemented.
+
+#### Automated frame test
+
+`python3 scripts/test-live-obs.py` runs a synthetic 720p30 source through the Mac relay and receiver on loopback. It verifies authentication, received frames, and disconnect behavior. To test the installed iPhone receiver without OBS, run `python3 scripts/obs-relay.py --iphone IPHONE_WIFI_IP --test-pattern`; select LIVE OBS and open Camera. The menu should show connected 1280×720 at about 30 FPS. Stop the command with Ctrl-C and confirm the menu reports disconnected while the camera holds the last frame.
+
 ### Adjust the camera framing
 
 The floating control panel provides quick controls without reopening the main menu:
@@ -63,7 +82,7 @@ Smaller increments provide finer adjustments; larger increments make repositioni
 ## Typical workflow
 
 1. Open VCam by pressing **Volume Up + Volume Down** together.
-2. Choose **Choose Photo / Video** and select one item from your library.
+2. Choose **Photo**, **Video File**, **LIVE OBS**, or **Real Camera**.
 3. Wait for the import or video optimization process to finish. Importing new media enables Replacement automatically.
 4. Confirm that Replacement is enabled and that the selected media is ready.
 5. Use **Settings** to choose movement and zoom increments.

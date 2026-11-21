@@ -165,6 +165,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
 
 @implementation VCamMenuViewController {
     UILabel *_statusLabel;
+    UILabel *_liveStatusLabel;
     UILabel *_diagnosticLabel;
     UIButton *_toggleButton;
     UIButton *_controlVisibilityButton;
@@ -294,8 +295,22 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     _statusLabel = VCamMakeLabel(@"No replacement media selected", [UIFont systemFontOfSize:13], [UIColor colorWithWhite:1 alpha:0.72]);
     [stack addArrangedSubview:_statusLabel];
 
-    UIButton *chooseButton = VCamMakeButton(@"Choose Photo / Video", [UIColor colorWithRed:0.20 green:0.42 blue:0.86 alpha:1], self, @selector(chooseMedia));
-    [stack addArrangedSubview:chooseButton];
+    UIStackView *sourceTop = [[UIStackView alloc] init];
+    sourceTop.axis = UILayoutConstraintAxisHorizontal;
+    sourceTop.distribution = UIStackViewDistributionFillEqually;
+    sourceTop.spacing = 8;
+    [sourceTop addArrangedSubview:VCamMakeButton(@"Photo", [UIColor colorWithRed:0.20 green:0.42 blue:0.86 alpha:1], self, @selector(choosePhoto))];
+    [sourceTop addArrangedSubview:VCamMakeButton(@"Video File", [UIColor colorWithRed:0.20 green:0.42 blue:0.86 alpha:1], self, @selector(chooseVideo))];
+    [stack addArrangedSubview:sourceTop];
+    UIStackView *sourceBottom = [[UIStackView alloc] init];
+    sourceBottom.axis = UILayoutConstraintAxisHorizontal;
+    sourceBottom.distribution = UIStackViewDistributionFillEqually;
+    sourceBottom.spacing = 8;
+    [sourceBottom addArrangedSubview:VCamMakeButton(@"LIVE OBS", [UIColor colorWithRed:0.28 green:0.48 blue:0.60 alpha:1], self, @selector(selectLiveOBS))];
+    [sourceBottom addArrangedSubview:VCamMakeButton(@"Real Camera", [UIColor colorWithWhite:1 alpha:0.17], self, @selector(selectRealCamera))];
+    [stack addArrangedSubview:sourceBottom];
+    _liveStatusLabel = VCamMakeLabel(@"", [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular], [UIColor colorWithWhite:1 alpha:0.82]);
+    [stack addArrangedSubview:_liveStatusLabel];
 
     _toggleButton = VCamMakeButton(@"Enable Replacement", [UIColor colorWithRed:0.13 green:0.52 blue:0.32 alpha:1], self, @selector(toggleReplacement));
     [stack addArrangedSubview:_toggleButton];
@@ -753,11 +768,29 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
 - (void)refreshStatus {
     NSString *path = VCamCopySetting(VCamMediaPathKey);
     BOOL enabled = [VCamCopySetting(VCamEnabledKey) boolValue];
-    if ([path isKindOfClass:[NSString class]] && path.length > 0) {
+    NSString *source = VCamCopySetting(VCamSourceModeKey);
+    BOOL live = [source isEqualToString:@"live"];
+    if (live) {
+        _statusLabel.text = [NSString stringWithFormat:@"Source: LIVE OBS · %@", enabled ? @"Enabled" : @"Disabled"];
+        NSData *json = [NSData dataWithContentsOfFile:VCamLiveStatusPath()];
+        NSDictionary *status = json ? [NSJSONSerialization JSONObjectWithData:json options:0 error:nil] : nil;
+        if (![status isKindOfClass:NSDictionary.class]) status = @{};
+        BOOL connected = [status[@"connected"] boolValue];
+        NSString *error = [status[@"last_error"] isKindOfClass:NSString.class] ? status[@"last_error"] : @"";
+        _liveStatusLabel.text = [NSString stringWithFormat:@"%@ · %.1f FPS · %@x%@\nFrame age: %@ ms · relay: %@ ms · dropped: %@%@",
+            connected ? @"Connected" : @"Disconnected",
+            [status[@"fps"] doubleValue], status[@"width"] ?: @0, status[@"height"] ?: @0,
+            status[@"frame_age_ms"] ?: @"—", status[@"latency_est_ms"] ?: @"—",
+            status[@"dropped_frames"] ?: @0,
+            error.length ? [@"\nLast error: " stringByAppendingString:error] : @""];
+    } else if ([source isEqualToString:@"real"]) {
+        _statusLabel.text = @"Source: Real Camera";
+    } else if ([path isKindOfClass:[NSString class]] && path.length > 0) {
         _statusLabel.text = [NSString stringWithFormat:@"Selected: %@ · %@", path.lastPathComponent, enabled ? @"Enabled" : @"Disabled"];
     } else {
         _statusLabel.text = @"No replacement media selected";
     }
+    _liveStatusLabel.hidden = !live;
     [_toggleButton setTitle:(enabled ? @"Disable Replacement" : @"Enable Replacement") forState:UIControlStateNormal];
     _toggleButton.backgroundColor = enabled ? [UIColor colorWithRed:0.66 green:0.25 blue:0.22 alpha:1]
                                             : [UIColor colorWithRed:0.13 green:0.52 blue:0.32 alpha:1];
@@ -807,13 +840,33 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     [VCamMenuPresenter hideMenu];
 }
 
-- (void)chooseMedia {
+- (void)choosePhoto {
+    [self chooseMediaWithFilter:[PHPickerFilter imagesFilter]];
+}
+
+- (void)chooseVideo {
+    [self chooseMediaWithFilter:[PHPickerFilter videosFilter]];
+}
+
+- (void)chooseMediaWithFilter:(PHPickerFilter *)filter {
     PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
-    configuration.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[[PHPickerFilter imagesFilter], [PHPickerFilter videosFilter]]];
+    configuration.filter = filter;
     configuration.selectionLimit = 1;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
     picker.delegate = self;
     [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)selectLiveOBS {
+    VCamSetSetting(VCamSourceModeKey, @"live");
+    VCamSetSetting(VCamEnabledKey, @YES);
+    [self refreshStatus];
+}
+
+- (void)selectRealCamera {
+    VCamSetSetting(VCamSourceModeKey, @"real");
+    VCamSetSetting(VCamEnabledKey, @NO);
+    [self refreshStatus];
 }
 
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
@@ -826,6 +879,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
 - (void)finishImportAtPath:(NSString *)path mediaType:(NSString *)mediaType filename:(NSString *)filename {
     NSFileManager *fileManager = NSFileManager.defaultManager;
     VCamSetSetting(VCamMediaTypeKey, mediaType);
+    VCamSetSetting(VCamSourceModeKey, [mediaType isEqualToString:@"video"] ? @"video" : @"photo");
     VCamSetSetting(VCamVideoPausedKey, @NO);
     VCamSetSetting(VCamMediaPathKey, path);
     VCamSetSetting(VCamEnabledKey, @YES);

@@ -51,6 +51,10 @@ static NSUInteger sLoadFailureCount = 0;
 static CFTimeInterval sLastCameraFrameAt = 0.0;
 static BOOL sVideoPlaybackPausedByUser = NO;
 static BOOL sVideoPausedForCameraIdle = NO;
+static dispatch_source_t sLiveFrameTimer = nil;
+static dispatch_queue_t sLiveFrameQueue = nil;
+static BOOL sLiveActive = NO;
+static unsigned long long sLiveFileNumber = 0;
 
 static void VCamEnsureState(void) {
     dispatch_once(&sLockOnce, ^{
@@ -63,6 +67,7 @@ static void VCamEnsureState(void) {
         dispatch_queue_attr_t videoQueueAttributes = dispatch_queue_attr_make_with_qos_class(
             DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
         sVideoFrameQueue = dispatch_queue_create("com.tinysweet.vcam.video-frame-pump", videoQueueAttributes);
+        sLiveFrameQueue = dispatch_queue_create("com.tinysweet.vcam.live-frame-pump", videoQueueAttributes);
     });
 }
 
@@ -72,6 +77,53 @@ static CGFloat VCamNumber(id value, CGFloat fallback) {
 
 static void VCamStopVideoFramePumpLocked(void);
 static void VCamStopVideoPlaybackLocked(void);
+
+static void VCamStopLiveFramePumpLocked(void) {
+    sLiveActive = NO;
+    if (sLiveFrameTimer) {
+        dispatch_source_cancel(sLiveFrameTimer);
+        sLiveFrameTimer = nil;
+    }
+    sLiveFileNumber = 0;
+}
+
+// ImageIO work stays on a private queue. The camera callback only reads the
+// newest immutable UIImage under sLock, then renders through the normal path.
+static void VCamStartLiveFramePumpLocked(void) {
+    if (sLiveFrameTimer) return;
+    sLiveActive = YES;
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sLiveFrameQueue);
+    if (!timer) return;
+    sLiveFrameTimer = timer;
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), NSEC_PER_SEC / 30, 3 * NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(timer, ^{
+        @autoreleasepool {
+            NSString *path = [VCamMediaDirectory() stringByAppendingPathComponent:@"live-frame.jpg"];
+            NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+            unsigned long long fileNumber = [attributes[NSFileSystemFileNumber] unsignedLongLongValue];
+            @synchronized (sLock) {
+                if (!sLiveActive || !sEnabled || !fileNumber || fileNumber == sLiveFileNumber) return;
+            }
+            NSData *data = [NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:nil];
+            if (!data) return;
+            CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
+            CGImageRef frame = source ? CGImageSourceCreateImageAtIndex(source, 0, NULL) : NULL;
+            if (source) CFRelease(source);
+            if (!frame) return;
+            UIImage *image = [UIImage imageWithCGImage:frame];
+            CGImageRelease(frame);
+            @synchronized (sLock) {
+                if (!sLiveActive || !sEnabled || !sLiveFrameTimer) return;
+                sLiveFileNumber = fileNumber;
+                sReplacementImage = image;
+                sCurrentMode = VCamModeImage;
+                VCamSetRuntimeStatus(@"mediaState", @"live-ready");
+                VCamSetRuntimeStatus(@"mediaDetail", [NSString stringWithFormat:@"LIVE OBS %zux%zu", CGImageGetWidth(image.CGImage), CGImageGetHeight(image.CGImage)]);
+            }
+        }
+    });
+    dispatch_resume(timer);
+}
 
 static void VCamStopVideoFramePumpLocked(void) {
     if (sVideoFrameTimer) {
@@ -421,12 +473,24 @@ void loadReplacementMedia(void) {
         id pathValue = VCamCopySetting(VCamMediaPathKey);
         NSString *observedPath = [pathValue isKindOfClass:[NSString class]] ? [(NSString *)pathValue copy] : nil;
         NSString *observedType = VCamCopySetting(VCamMediaTypeKey);
+        NSString *sourceMode = VCamCopySetting(VCamSourceModeKey);
+        BOOL liveSelected = [sourceMode isEqualToString:@"live"];
+        BOOL realSelected = [sourceMode isEqualToString:@"real"];
+        if (!liveSelected && sLiveActive) {
+            VCamStopLiveFramePumpLocked();
+            sReplacementImage = nil;
+            sCurrentMode = VCamModeNone;
+            sLoadedPath = nil;
+            sRequestedPath = nil;
+            sLoadGeneration++;
+        }
         VCamSetRuntimeStatus(@"mediaSelectionReceived", @(observedPath.length > 0));
         VCamSetRuntimeStatus(@"mediaSelectionTransport", @"Darwin Notify");
         VCamSetRuntimeStatus(@"mediaSelectionFilename", observedPath.lastPathComponent ?: @"");
         VCamSetRuntimeStatus(@"mediaSelectionType", observedType ?: @"unknown");
 
-        if (!sEnabled) {
+        if (!sEnabled || realSelected) {
+            if (sLiveActive) VCamStopLiveFramePumpLocked();
             if (sCurrentMode == VCamModeVideo) {
                 [sVideoPlayer pause];
                 VCamStopVideoFramePumpLocked();
@@ -435,6 +499,23 @@ void loadReplacementMedia(void) {
             VCamSetRuntimeStatus(@"replacementRendered", @NO);
             VCamSetRuntimeStatus(@"mediaState", @"disabled");
             VCamSetRuntimeStatus(@"mediaDetail", @"Replacement is turned off");
+            return;
+        }
+        if (liveSelected) {
+            if (!sLiveActive) {
+                sLoadGeneration++;
+                sIsLoading = NO;
+                sLoadedPath = nil;
+                sRequestedPath = nil;
+                sCurrentMode = VCamModeNone;
+                sReplacementImage = nil;
+                VCamStopVideoPlaybackLocked();
+                sHasLoggedFirstRender = NO;
+                VCamSetRuntimeStatus(@"replacementRendered", @NO);
+                VCamSetRuntimeStatus(@"mediaState", @"live-waiting");
+                VCamSetRuntimeStatus(@"mediaDetail", @"Waiting for OBS frames");
+                VCamStartLiveFramePumpLocked();
+            }
             return;
         }
         if (![pathValue isKindOfClass:[NSString class]] || [(NSString *)pathValue length] == 0) {
