@@ -791,6 +791,8 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
         _statusLabel.text = @"No replacement media selected";
     }
     _liveStatusLabel.hidden = !live;
+    _toggleButton.enabled = ![source isEqualToString:@"real"];
+    _toggleButton.alpha = _toggleButton.enabled ? 1.0 : 0.5;
     [_toggleButton setTitle:(enabled ? @"Disable Replacement" : @"Enable Replacement") forState:UIControlStateNormal];
     _toggleButton.backgroundColor = enabled ? [UIColor colorWithRed:0.66 green:0.25 blue:0.22 alpha:1]
                                             : [UIColor colorWithRed:0.13 green:0.52 blue:0.32 alpha:1];

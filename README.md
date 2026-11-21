@@ -29,7 +29,7 @@ VCam can use the current OBS scene as its camera image. OBS outputs H.264/MPEG-T
 
 #### Setup on Mac and iPhone
 
-1. Install the `0.1.36-live2` rootless package on the Dopamine iPhone. The receiver needs the jailbreak `python3` package and listens on TCP port `47110`. Keep Mac and iPhone on the same Wi-Fi network and allow this port through any local firewall.
+1. Install the `0.1.36-live3` rootless package on the Dopamine iPhone. The receiver needs the jailbreak `python3` package and listens on TCP port `47110`. Keep Mac and iPhone on the same Wi-Fi network and allow this port through any local firewall.
 2. On the Mac install FFmpeg (`brew install ffmpeg`). Connect the iPhone by USB once so the relay can securely fetch the receiver's random token using the project's pinned SSH helper. The token is cached in `iPhone11JB/data/vcam-obs-token.hex` with owner-only permissions. Later runs can use Wi-Fi alone.
 3. In OBS set **Settings → Video → Output (Scaled) Resolution** to `1280×720` and **Common FPS Values** to `30`.
 4. In **Settings → Output**, set **Output Mode: Advanced**. On the **Recording** tab set **Type: Custom Output (FFmpeg)**, **FFmpeg Output Type: Output to URL**, **File path or URL: `udp://127.0.0.1:47111?pkt_size=1316`**, **Container Format: `mpegts`**, **Video Encoder: `libx264`**, **Video Bitrate: `4000` Kbps**, **Keyframe interval: `30` frames**. If encoder settings are exposed, use `preset=veryfast tune=zerolatency`. Audio may remain disabled; it is not sent to the iPhone camera.
@@ -40,7 +40,7 @@ The menu reports connection, FPS, resolution, received-frame age, approximate re
 
 #### Automated frame test
 
-`python3 scripts/test-live-obs.py` runs a synthetic 720p30 source through the Mac relay and receiver on loopback. It verifies authentication, received frames, and disconnect behavior. To test the installed iPhone receiver without OBS, run `python3 scripts/obs-relay.py --iphone IPHONE_WIFI_IP --test-pattern`; select LIVE OBS and open Camera. The menu should show connected 1280×720 at about 30 FPS. Stop the command with Ctrl-C and confirm the menu reports disconnected while the camera holds the last frame.
+`python3 scripts/test-live-obs.py` encodes a synthetic 720p30 source as H.264/MPEG-TS over UDP, then runs it through the Mac relay and receiver on loopback. It verifies authentication, received frames, and disconnect behavior. To test the installed iPhone receiver without OBS, run `python3 scripts/obs-relay.py --iphone IPHONE_WIFI_IP --test-pattern`; select LIVE OBS and open Camera. The menu should show connected 1280×720 at about 30 FPS. Stop the command with Ctrl-C and confirm the menu reports disconnected while the camera holds the last frame.
 
 ### Adjust the camera framing
 

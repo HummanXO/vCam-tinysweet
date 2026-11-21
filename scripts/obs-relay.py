@@ -194,7 +194,10 @@ def main():
     parser.add_argument("--token-file", default=str(TOKEN_FILE))
     parser.add_argument("--software", action="store_true", help="disable VideoToolbox decoding on Mac")
     parser.add_argument("--test-pattern", action="store_true", help="send a synthetic 720p30 image without OBS")
-    relay(parser.parse_args())
+    try:
+        relay(parser.parse_args())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

@@ -153,6 +153,8 @@ class Receiver:
                         self.connected = False
                         self.last_error = "OBS stream timed out"
                         self.publish_status()
+                    elif not self.connected and time.monotonic() - self.last_status_emit >= 0.5:
+                        self.publish_status()
                     continue
                 try:
                     with conn:
