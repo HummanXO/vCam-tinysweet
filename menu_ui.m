@@ -165,6 +165,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
 
 @implementation VCamMenuViewController {
     UILabel *_statusLabel;
+    UILabel *_liveStatusLabel;
     UILabel *_diagnosticLabel;
     UIButton *_toggleButton;
     UIButton *_controlVisibilityButton;
@@ -280,10 +281,8 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     titleGroup.axis = UILayoutConstraintAxisVertical;
     titleGroup.alignment = UIStackViewAlignmentLeading;
     titleGroup.spacing = 1;
-    UILabel *title = VCamMakeLabel(@"VCam", [UIFont systemFontOfSize:22 weight:UIFontWeightBold], UIColor.whiteColor);
-    UILabel *byline = VCamMakeLabel(@"by tinysweet", [UIFont systemFontOfSize:11 weight:UIFontWeightMedium], [UIColor colorWithWhite:1 alpha:0.58]);
+    UILabel *title = VCamMakeLabel(@"Camera Source", [UIFont systemFontOfSize:22 weight:UIFontWeightBold], UIColor.whiteColor);
     [titleGroup addArrangedSubview:title];
-    [titleGroup addArrangedSubview:byline];
     [header addArrangedSubview:titleGroup];
     [header addArrangedSubview:[[UIView alloc] init]];
     UIButton *close = VCamMakeButton(@"✕", [UIColor colorWithWhite:1 alpha:0.12], self, @selector(closeMenu));
@@ -294,8 +293,22 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     _statusLabel = VCamMakeLabel(@"No replacement media selected", [UIFont systemFontOfSize:13], [UIColor colorWithWhite:1 alpha:0.72]);
     [stack addArrangedSubview:_statusLabel];
 
-    UIButton *chooseButton = VCamMakeButton(@"Choose Photo / Video", [UIColor colorWithRed:0.20 green:0.42 blue:0.86 alpha:1], self, @selector(chooseMedia));
-    [stack addArrangedSubview:chooseButton];
+    UIStackView *sourceTop = [[UIStackView alloc] init];
+    sourceTop.axis = UILayoutConstraintAxisHorizontal;
+    sourceTop.distribution = UIStackViewDistributionFillEqually;
+    sourceTop.spacing = 8;
+    [sourceTop addArrangedSubview:VCamMakeButton(@"Photo", [UIColor colorWithRed:0.20 green:0.42 blue:0.86 alpha:1], self, @selector(choosePhoto))];
+    [sourceTop addArrangedSubview:VCamMakeButton(@"Video File", [UIColor colorWithRed:0.20 green:0.42 blue:0.86 alpha:1], self, @selector(chooseVideo))];
+    [stack addArrangedSubview:sourceTop];
+    UIStackView *sourceBottom = [[UIStackView alloc] init];
+    sourceBottom.axis = UILayoutConstraintAxisHorizontal;
+    sourceBottom.distribution = UIStackViewDistributionFillEqually;
+    sourceBottom.spacing = 8;
+    [sourceBottom addArrangedSubview:VCamMakeButton(@"LIVE OBS", [UIColor colorWithRed:0.28 green:0.48 blue:0.60 alpha:1], self, @selector(selectLiveOBS))];
+    [sourceBottom addArrangedSubview:VCamMakeButton(@"Real Camera", [UIColor colorWithWhite:1 alpha:0.17], self, @selector(selectRealCamera))];
+    [stack addArrangedSubview:sourceBottom];
+    _liveStatusLabel = VCamMakeLabel(@"", [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular], [UIColor colorWithWhite:1 alpha:0.82]);
+    [stack addArrangedSubview:_liveStatusLabel];
 
     _toggleButton = VCamMakeButton(@"Enable Replacement", [UIColor colorWithRed:0.13 green:0.52 blue:0.32 alpha:1], self, @selector(toggleReplacement));
     [stack addArrangedSubview:_toggleButton];
@@ -369,7 +382,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     UIButton *copyDiagnostics = VCamMakeButton(@"Copy Logs", [UIColor colorWithWhite:1 alpha:0.12], self, @selector(copyDiagnostics));
     [_logsContainer addArrangedSubview:copyDiagnostics];
 
-    UILabel *footer = VCamMakeLabel(@"Press Volume Up + Volume Down together to open or close VCam.",
+    UILabel *footer = VCamMakeLabel(@"Press Volume Up + Volume Down together to open or close this menu.",
                                     [UIFont systemFontOfSize:12], [UIColor colorWithWhite:1 alpha:0.60]);
     [stack addArrangedSubview:footer];
 
@@ -656,10 +669,12 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     NSDictionary *combined = VCamCopyRuntimeStatus();
     NSDictionary *daemonStatuses = [combined[@"daemonStatuses"] isKindOfClass:[NSDictionary class]] ? combined[@"daemonStatuses"] : @{};
     NSDictionary *mediaDaemon = [daemonStatuses[@"mediaserverd"] isKindOfClass:[NSDictionary class]] ? daemonStatuses[@"mediaserverd"] : @{};
-    BOOL mediaLoaded = [mediaDaemon[@"runtimeVersion"] isEqualToString:VCamRuntimeVersion] && [mediaDaemon[@"daemonLoaded"] boolValue];
-    NSDictionary *runtime = mediaDaemon.count ? mediaDaemon : combined;
+    NSDictionary *cameraDaemon = [daemonStatuses[@"cameracaptured"] isKindOfClass:[NSDictionary class]] ? daemonStatuses[@"cameracaptured"] : @{};
+    NSDictionary *runtime = [cameraDaemon[@"daemonLoaded"] boolValue] ? cameraDaemon :
+                            ([mediaDaemon[@"daemonLoaded"] boolValue] ? mediaDaemon : combined);
+    BOOL mediaLoaded = [runtime[@"runtimeVersion"] isEqualToString:VCamRuntimeVersion] && [runtime[@"daemonLoaded"] boolValue];
 
-    NSString *processName = [runtime[@"daemonProcess"] isKindOfClass:[NSString class]] ? runtime[@"daemonProcess"] : @"mediaserverd";
+    NSString *processName = [runtime[@"daemonProcess"] isKindOfClass:[NSString class]] ? runtime[@"daemonProcess"] : @"unknown";
     NSString *hookState = [runtime[@"hookState"] isKindOfClass:[NSString class]] ? runtime[@"hookState"] : @"unknown";
     BOOL framesSeen = [runtime[@"cameraFramesSeen"] boolValue];
     BOOL rendered = [runtime[@"replacementRendered"] boolValue];
@@ -669,13 +684,13 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     NSString *renderError = [runtime[@"renderError"] isKindOfClass:[NSString class]] ? runtime[@"renderError"] : @"";
     NSInteger heartbeatAge = [runtime[@"heartbeatAgeSeconds"] respondsToSelector:@selector(integerValue)] ? [runtime[@"heartbeatAgeSeconds"] integerValue] : -1;
 
-    NSString *daemonLine = mediaLoaded ? [NSString stringWithFormat:@"Camera daemon injection: YES (%@)", processName] : @"Camera daemon injection: NO HEARTBEAT from mediaserverd";
-    NSString *heartbeatLine = heartbeatAge >= 0 ? [NSString stringWithFormat:@"mediaserverd heartbeat: %@ (%lds ago)", mediaLoaded ? @"ALIVE" : @"STALE", (long)heartbeatAge] : @"mediaserverd heartbeat: NOT RECEIVED";
+    NSString *daemonLine = mediaLoaded ? [NSString stringWithFormat:@"Camera daemon injection: YES (%@)", processName] : @"Camera daemon injection: NO HEARTBEAT from camera daemons";
+    NSString *heartbeatLine = heartbeatAge >= 0 ? [NSString stringWithFormat:@"%@ heartbeat: %@ (%lds ago)", processName, mediaLoaded ? @"ALIVE" : @"STALE", (long)heartbeatAge] : @"Camera daemon heartbeat: NOT RECEIVED";
     NSString *frameLine = framesSeen ? [NSString stringWithFormat:@"Camera frames: RECEIVED (%@)", runtime[@"cameraFrameSize"] ?: @"size unknown"] : @"Camera frames: WAITING (open Camera and start preview)";
     NSString *mediaLine = [NSString stringWithFormat:@"Media: %@%@", mediaState.uppercaseString, mediaDetail.length ? [@" — " stringByAppendingString:mediaDetail] : @""];
     NSString *enabledLine = [runtime[@"replacementEnabled"] respondsToSelector:@selector(boolValue)]
-        ? [NSString stringWithFormat:@"Replacement state (mediaserverd): %@", [runtime[@"replacementEnabled"] boolValue] ? @"ON" : @"OFF"]
-        : @"Replacement state (mediaserverd): WAITING";
+        ? [NSString stringWithFormat:@"Replacement state (%@): %@", processName, [runtime[@"replacementEnabled"] boolValue] ? @"ON" : @"OFF"]
+        : [NSString stringWithFormat:@"Replacement state (%@): WAITING", processName];
     NSString *outputLine = rendered ? [NSString stringWithFormat:@"Buffer render call: SENT (%@)", runtime[@"renderedFrameSize"] ?: @"size unknown"] : @"Buffer render call: NOT SENT YET";
     BOOL selectionReceived = [runtime[@"mediaSelectionReceived"] boolValue];
     NSString *selectionName = [runtime[@"mediaSelectionFilename"] isKindOfClass:NSString.class] ? runtime[@"mediaSelectionFilename"] : @"";
@@ -688,10 +703,20 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     NSString *videoPump = [runtime[@"videoFramePump"] isKindOfClass:NSString.class] ? runtime[@"videoFramePump"] : @"not-active";
     NSString *videoFrameSize = [runtime[@"videoFrameSize"] isKindOfClass:NSString.class] ? runtime[@"videoFrameSize"] : @"waiting";
     NSString *videoPlayerError = [runtime[@"videoPlayerError"] isKindOfClass:NSString.class] ? runtime[@"videoPlayerError"] : @"";
+    NSString *stageLine = [NSString stringWithFormat:@"Stages: ctor %@ · framework %@ · class %@ · selector %@ · hook %@ · frames %@ · media %@ · render %@",
+        [runtime[@"constructorReached"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"frameworkLoaded"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"hookClassFound"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"hookSelectorFound"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"hookInstalled"] boolValue] ? @"YES" : @"NO",
+        framesSeen ? @"YES" : @"NO",
+        [runtime[@"replacementMediaLoaded"] boolValue] ? @"YES" : @"NO",
+        [runtime[@"replacementFramesRendered"] boolValue] ? @"YES" : @"NO"];
     NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithArray:@[
         daemonLine,
         [NSString stringWithFormat:@"Camera daemon version: %@", daemonVersion],
         heartbeatLine,
+        stageLine,
         [NSString stringWithFormat:@"BWNodeOutput hook: %@", hookState.uppercaseString],
         frameLine,
         enabledLine,
@@ -720,7 +745,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     } else if ([mediaState isEqualToString:@"no-selection"]) {
         [lines addObject:@"Action: choose a photo or video."];
     } else if ([mediaState isEqualToString:@"file-not-readable"]) {
-        [lines addObject:@"Action: check Media file access and errno; confirm the camera daemon can open the file under /tmp/VCamMedia."];
+        [lines addObject:@"Action: check Media file access and errno; confirm the camera daemon can open the shared media file."];
     } else if ([mediaState isEqualToString:@"video-player-failed"]) {
         [lines addObject:@"Action: video playback was stopped safely. Re-import a compatible video; check Video player error for details."];
     } else if ([mediaState containsString:@"failed"] || [mediaState containsString:@"not-found"] || [mediaState containsString:@"missing"]) {
@@ -741,11 +766,31 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
 - (void)refreshStatus {
     NSString *path = VCamCopySetting(VCamMediaPathKey);
     BOOL enabled = [VCamCopySetting(VCamEnabledKey) boolValue];
-    if ([path isKindOfClass:[NSString class]] && path.length > 0) {
+    NSString *source = VCamCopySetting(VCamSourceModeKey);
+    BOOL live = [source isEqualToString:@"live"];
+    if (live) {
+        _statusLabel.text = [NSString stringWithFormat:@"Source: LIVE OBS · %@", enabled ? @"Enabled" : @"Disabled"];
+        NSData *json = [NSData dataWithContentsOfFile:VCamLiveStatusPath()];
+        NSDictionary *status = json ? [NSJSONSerialization JSONObjectWithData:json options:0 error:nil] : nil;
+        if (![status isKindOfClass:NSDictionary.class]) status = @{};
+        BOOL connected = [status[@"connected"] boolValue];
+        NSString *error = [status[@"last_error"] isKindOfClass:NSString.class] ? status[@"last_error"] : @"";
+        _liveStatusLabel.text = [NSString stringWithFormat:@"%@ · %.1f FPS · %@x%@\nFrame age: %@ ms · relay: %@ ms · dropped: %@%@",
+            connected ? @"Connected" : @"Disconnected",
+            [status[@"fps"] doubleValue], status[@"width"] ?: @0, status[@"height"] ?: @0,
+            status[@"frame_age_ms"] ?: @"—", status[@"latency_est_ms"] ?: @"—",
+            status[@"dropped_frames"] ?: @0,
+            error.length ? [@"\nLast error: " stringByAppendingString:error] : @""];
+    } else if ([source isEqualToString:@"real"]) {
+        _statusLabel.text = @"Source: Real Camera";
+    } else if ([path isKindOfClass:[NSString class]] && path.length > 0) {
         _statusLabel.text = [NSString stringWithFormat:@"Selected: %@ · %@", path.lastPathComponent, enabled ? @"Enabled" : @"Disabled"];
     } else {
         _statusLabel.text = @"No replacement media selected";
     }
+    _liveStatusLabel.hidden = !live;
+    _toggleButton.enabled = ![source isEqualToString:@"real"];
+    _toggleButton.alpha = _toggleButton.enabled ? 1.0 : 0.5;
     [_toggleButton setTitle:(enabled ? @"Disable Replacement" : @"Enable Replacement") forState:UIControlStateNormal];
     _toggleButton.backgroundColor = enabled ? [UIColor colorWithRed:0.66 green:0.25 blue:0.22 alpha:1]
                                             : [UIColor colorWithRed:0.13 green:0.52 blue:0.32 alpha:1];
@@ -795,13 +840,33 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
     [VCamMenuPresenter hideMenu];
 }
 
-- (void)chooseMedia {
+- (void)choosePhoto {
+    [self chooseMediaWithFilter:[PHPickerFilter imagesFilter]];
+}
+
+- (void)chooseVideo {
+    [self chooseMediaWithFilter:[PHPickerFilter videosFilter]];
+}
+
+- (void)chooseMediaWithFilter:(PHPickerFilter *)filter {
     PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
-    configuration.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[[PHPickerFilter imagesFilter], [PHPickerFilter videosFilter]]];
+    configuration.filter = filter;
     configuration.selectionLimit = 1;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
     picker.delegate = self;
     [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)selectLiveOBS {
+    VCamSetSetting(VCamSourceModeKey, @"live");
+    VCamSetSetting(VCamEnabledKey, @YES);
+    [self refreshStatus];
+}
+
+- (void)selectRealCamera {
+    VCamSetSetting(VCamSourceModeKey, @"real");
+    VCamSetSetting(VCamEnabledKey, @NO);
+    [self refreshStatus];
 }
 
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
@@ -814,6 +879,7 @@ static UILabel *VCamMakeLabel(NSString *text, UIFont *font, UIColor *color) {
 - (void)finishImportAtPath:(NSString *)path mediaType:(NSString *)mediaType filename:(NSString *)filename {
     NSFileManager *fileManager = NSFileManager.defaultManager;
     VCamSetSetting(VCamMediaTypeKey, mediaType);
+    VCamSetSetting(VCamSourceModeKey, [mediaType isEqualToString:@"video"] ? @"video" : @"photo");
     VCamSetSetting(VCamVideoPausedKey, @NO);
     VCamSetSetting(VCamMediaPathKey, path);
     VCamSetSetting(VCamEnabledKey, @YES);
