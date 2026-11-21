@@ -2,6 +2,7 @@
 #import <sys/stat.h>
 #import <notify.h>
 #import <time.h>
+#import <string.h>
 #import <dispatch/dispatch.h>
 
 NSString * const VCamPreferenceDomain = @"com.tinysweet.vcamios";
@@ -13,7 +14,40 @@ NSString * const VCamOffsetYKey = @"OffsetY";
 NSString * const VCamRotationKey = @"Rotation";
 NSString * const VCamZoomKey = @"Zoom";
 NSString * const VCamVideoPausedKey = @"VideoPaused";
-NSString * const VCamRuntimeVersion = @"0.1.34";
+NSString * const VCamSourceModeKey = @"SourceMode";
+NSString * const VCamRuntimeVersion = @"0.1.36-live13";
+
+static NSString *VCamCurrentDaemonName(void);
+static int VCamNotifyTokenForName(NSString *name);
+static NSMutableDictionary *sWritableRuntimeStatus;
+
+// Compact cross-sandbox state. The plist below is only supplemental: a camera
+// daemon may be unable to create or write /tmp/VCamStatus.
+enum {
+    VCamStageConstructor = 1ULL << 0,
+    VCamStageFramework = 1ULL << 1,
+    VCamStageClass = 1ULL << 2,
+    VCamStageSelector = 1ULL << 3,
+    VCamStageHook = 1ULL << 4,
+    VCamStageFrames = 1ULL << 5,
+    VCamStageMedia = 1ULL << 6,
+    VCamStageRendered = 1ULL << 7
+};
+
+static NSString *VCamStageName(NSString *processName) {
+    return [NSString stringWithFormat:@"com.tinysweet.vcamios.stage.%@", processName];
+}
+
+static void VCamPublishStage(uint64_t stage, BOOL reset) {
+    NSString *name = VCamStageName(VCamCurrentDaemonName());
+    int token = VCamNotifyTokenForName(name);
+    if (token == NOTIFY_TOKEN_INVALID) return;
+    uint64_t current = 0;
+    if (!reset) notify_get_state(token, &current);
+    uint32_t result = notify_set_state(token, reset ? stage : (current | stage));
+    if (result == NOTIFY_STATUS_OK) notify_post(name.UTF8String);
+    else NSLog(@"[VCam] stage publish failed: %u", result);
+}
 
 static NSString *VCamPreferencesDirectory(void) {
     // Keep persistent preferences outside /tmp; only the selected media is temporary.
@@ -49,14 +83,23 @@ static NSString *VCamRuntimeStatusFilePathForProcess(NSString *processName) {
 }
 
 static BOOL VCamEnsureRuntimeStatusDirectory(void) {
+    // cameracaptured can be denied access to /tmp. Avoid retrying and logging
+    // on every camera frame while keeping the Darwin notify stages available.
+    static time_t nextRetry = 0;
+    time_t now = time(NULL);
+    if (now < nextRetry) return NO;
     NSString *directory = VCamRuntimeStatusDirectory();
     NSError *error = nil;
     BOOL ok = [[NSFileManager defaultManager] createDirectoryAtPath:directory
                                          withIntermediateDirectories:YES
-                                                          attributes:@{ NSFilePosixPermissions: @0777 }
+                                         attributes:@{ NSFilePosixPermissions: @0755 }
                                                                error:&error];
-    if (ok) chmod(directory.fileSystemRepresentation, 0777);
-    if (!ok) NSLog(@"[VCam] cannot create runtime status directory %@: %@", directory, error);
+    if (!ok) {
+        nextRetry = now + 30;
+        NSLog(@"[VCam] cannot create runtime status directory %@: %@", directory, error);
+    } else {
+        nextRetry = 0;
+    }
     return ok;
 }
 
@@ -140,7 +183,7 @@ static BOOL VCamReadPublishedStringSetting(NSString *key, NSString **valueOut) {
     }
 
     NSString *decoded = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    if (!decoded) return NO;
+    if (!decoded || (data.length > 0 && memchr(data.bytes, 0, data.length) != NULL)) return NO;
     if (valueOut) *valueOut = decoded;
     return YES;
 }
@@ -282,6 +325,20 @@ NSDictionary *VCamCopyRuntimeStatus(void) {
         status[@"daemonLoaded"] = @(heartbeatCurrent);
         status[@"heartbeatTimestamp"] = @(heartbeat);
         status[@"heartbeatAgeSeconds"] = heartbeat > 0 && now >= heartbeat ? @(now - heartbeat) : @(-1);
+        int stageToken = VCamNotifyTokenForName(VCamStageName(processName));
+        uint64_t stages = 0;
+        if (stageToken != NOTIFY_TOKEN_INVALID) notify_get_state(stageToken, &stages);
+        status[@"constructorReached"] = @((stages & VCamStageConstructor) != 0 && heartbeatCurrent);
+        status[@"frameworkLoaded"] = @((stages & VCamStageFramework) != 0 && heartbeatCurrent);
+        status[@"hookClassFound"] = @((stages & VCamStageClass) != 0 && heartbeatCurrent);
+        status[@"hookSelectorFound"] = @((stages & VCamStageSelector) != 0 && heartbeatCurrent);
+        status[@"hookInstalled"] = @((stages & VCamStageHook) != 0 && heartbeatCurrent);
+        status[@"cameraFramesSeen"] = @((stages & VCamStageFrames) != 0 && heartbeatCurrent);
+        status[@"replacementMediaLoaded"] = @((stages & VCamStageMedia) != 0 && heartbeatCurrent);
+        status[@"replacementFramesRendered"] = @((stages & VCamStageRendered) != 0 && heartbeatCurrent);
+        if (heartbeatCurrent) {
+            status[@"hookState"] = (stages & VCamStageHook) ? @"installed" : @"searching";
+        }
         if (heartbeatCurrent && ![status[@"runtimeVersion"] isEqualToString:VCamRuntimeVersion]) {
             status[@"runtimeVersion"] = VCamRuntimeVersion;
             status[@"daemonPID"] = @0; // heartbeat proves the injected runtime is alive; PID may be sandbox-hidden.
@@ -289,7 +346,9 @@ NSDictionary *VCamCopyRuntimeStatus(void) {
         daemonStatuses[processName] = [status copy];
 
         NSDate *loadedAt = [status[@"daemonLoadedAt"] isKindOfClass:[NSDate class]] ? status[@"daemonLoadedAt"] : nil;
-        if (!newestStatus || (loadedAt && (!newestDate || [loadedAt compare:newestDate] == NSOrderedDescending))) {
+        if ((heartbeatCurrent && ![newestStatus[@"daemonLoaded"] boolValue]) ||
+            (!newestStatus || (heartbeatCurrent == [newestStatus[@"daemonLoaded"] boolValue] &&
+             loadedAt && (!newestDate || [loadedAt compare:newestDate] == NSOrderedDescending)))) {
             newestStatus = status;
             newestDate = loadedAt;
         }
@@ -302,11 +361,23 @@ NSDictionary *VCamCopyRuntimeStatus(void) {
 
 void VCamSetRuntimeStatus(NSString *key, id value) {
     if (key.length == 0) return;
+    if ([value respondsToSelector:@selector(boolValue)] && [value boolValue]) {
+        if ([key isEqualToString:@"frameworkLoaded"]) VCamPublishStage(VCamStageFramework, NO);
+        else if ([key isEqualToString:@"hookClassFound"]) VCamPublishStage(VCamStageClass, NO);
+        else if ([key isEqualToString:@"hookSelectorFound"]) VCamPublishStage(VCamStageSelector, NO);
+        else if ([key isEqualToString:@"cameraFramesSeen"]) VCamPublishStage(VCamStageFrames, NO);
+        else if ([key isEqualToString:@"replacementMediaLoaded"]) VCamPublishStage(VCamStageMedia, NO);
+        else if ([key isEqualToString:@"replacementRendered"]) VCamPublishStage(VCamStageRendered, NO);
+    }
+    if ([key isEqualToString:@"hookState"] && [value isEqual:@"installed"]) VCamPublishStage(VCamStageHook, NO);
     NSString *processName = VCamCurrentDaemonName();
     NSString *path = VCamRuntimeStatusFilePathForProcess(processName);
     @synchronized (processName) {
-        NSMutableDictionary *status = [VCamReadRuntimeStatusForProcess(processName) mutableCopy];
-        if (!status) status = [NSMutableDictionary dictionary];
+        if (!sWritableRuntimeStatus) {
+            sWritableRuntimeStatus = [VCamReadRuntimeStatusForProcess(processName) mutableCopy];
+        }
+        if (!sWritableRuntimeStatus) sWritableRuntimeStatus = [NSMutableDictionary dictionary];
+        NSMutableDictionary *status = sWritableRuntimeStatus;
         status[@"daemonProcess"] = processName;
         id oldValue = status[key];
         if (value && [oldValue isEqual:value]) return;
@@ -322,6 +393,7 @@ void VCamSetRuntimeStatus(NSString *key, id value) {
 
 void VCamResetRuntimeStatus(void) {
     NSString *processName = VCamCurrentDaemonName();
+    VCamPublishStage(VCamStageConstructor, YES);
     NSDictionary *initial = @{
         @"runtimeVersion": VCamRuntimeVersion,
         @"daemonLoaded": @YES,
@@ -335,6 +407,7 @@ void VCamResetRuntimeStatus(void) {
     };
     NSString *path = VCamRuntimeStatusFilePathForProcess(processName);
     @synchronized (processName) {
+        sWritableRuntimeStatus = [initial mutableCopy];
         if (VCamEnsureRuntimeStatusDirectory()) {
             BOOL didWrite = [initial writeToFile:path atomically:YES];
             if (didWrite) chmod(path.fileSystemRepresentation, 0644);
@@ -362,7 +435,12 @@ void VCamResetRuntimeStatus(void) {
 }
 
 NSString *VCamMediaDirectory(void) {
-    // Keep replacement files in the same shared temporary area that worked
-    // with the original mediaserverd implementation (/tmp/test.png).
-    return @"/tmp/VCamMedia";
+    // cameracaptured on iOS 18 denies /tmp and /var/mobile/Media. This
+    // persistent, mobile-owned jailbreak path is writable by the menu and
+    // readable by the camera daemon.
+    return @"/var/jb/var/mobile/VCam/Media";
+}
+
+NSString *VCamLiveStatusPath(void) {
+    return [VCamMediaDirectory() stringByAppendingPathComponent:@"live-status.json"];
 }

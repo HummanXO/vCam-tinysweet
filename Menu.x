@@ -111,6 +111,23 @@ static void VCamTryInstallVolumeActionHooks(void) {
         NSLog(@"[VCam] SpringBoard menu tweak loaded");
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC / 2)),
                        dispatch_get_main_queue(), ^{
+            NSString *directory = VCamMediaDirectory();
+            NSError *probeError = nil;
+            BOOL created = [[NSFileManager defaultManager] createDirectoryAtPath:directory
+                                                        withIntermediateDirectories:YES
+                                                                         attributes:@{ NSFilePosixPermissions: @0755 }
+                                                                              error:&probeError];
+            NSString *probe = [directory stringByAppendingPathComponent:@".vcam-write-probe"];
+            BOOL wrote = created && [@"probe" writeToFile:probe atomically:YES encoding:NSUTF8StringEncoding error:&probeError];
+            if (wrote) [[NSFileManager defaultManager] removeItemAtPath:probe error:nil];
+            NSLog(@"[VCam] SpringBoard shared media write probe: %@%@", wrote ? @"OK" : @"FAILED",
+                  probeError ? [NSString stringWithFormat:@" (%@)", probeError] : @"");
+            // notifyd may retain the string length after the previous
+            // SpringBoard exits while its chunk tokens are gone. Publish from
+            // the persistent plist instead of trusting that transient state.
+            NSDictionary *persisted = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Media/VCam/settings.plist"];
+            NSString *sourceMode = persisted[VCamSourceModeKey];
+            if ([sourceMode isKindOfClass:NSString.class]) VCamSetSetting(VCamSourceModeKey, sourceMode);
             VCamTryInstallVolumeActionHooks();
             [VCamMenuPresenter installOverlay];
         });

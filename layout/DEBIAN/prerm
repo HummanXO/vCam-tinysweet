@@ -1,0 +1,5 @@
+#!/bin/sh
+if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+    launchctl bootout system/com.tinysweet.vcam.obs 2>/dev/null || true
+fi
+exit 0
